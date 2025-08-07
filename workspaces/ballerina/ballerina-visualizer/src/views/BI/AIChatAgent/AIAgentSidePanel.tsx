@@ -509,17 +509,19 @@ export function AIAgentSidePanel(props: BIFlowDiagramProps) {
                         const resourcePathProperty = newProperties["resourcePath"];
                         if (resourcePathProperty) {
                             const path = resourcePathProperty.value;
-                            const updatedPath = typeof path === "string" ? path.replace(key, paramValue) : path;
-                            newProperties["resourcePath"] = {
-                                ...resourcePathProperty,
-                                codedata: resourcePathProperty.codedata ? {
-                                    ...resourcePathProperty.codedata,
-                                    originalName: typeof updatedPath === "string" ? updatedPath : String(updatedPath)
-                                } : {
-                                    originalName: typeof updatedPath === "string" ? updatedPath : String(updatedPath)
-                                },
-                                value: updatedPath
-                            };
+                            if (typeof path === "string" && path.includes(key)) {
+                                const updatedPath = typeof path === "string" ? path.replaceAll(key, paramValue) : path;
+                                newProperties["resourcePath"] = {
+                                    ...resourcePathProperty,
+                                    codedata: resourcePathProperty.codedata ? {
+                                        ...resourcePathProperty.codedata,
+                                        originalName: typeof updatedPath === "string" ? updatedPath : String(updatedPath)
+                                    } : {
+                                        originalName: typeof updatedPath === "string" ? updatedPath : String(updatedPath)
+                                    },
+                                    value: updatedPath
+                                };
+                            }
                         }
                     }
                 });
