@@ -257,7 +257,9 @@ import {
     ImportIntegrationResponse,
     onMigrationToolStateChanged,
     onMigrationToolLogs,
-    GetMigrationToolsResponse
+    GetMigrationToolsResponse,
+    BIAvailableItemsByCategoryRequest,
+    BIAvailableItemsByCategoryResponse
 } from "@wso2/ballerina-core";
 import { BallerinaExtension } from "./index";
 import { debug, handlePullModuleProgress } from "../utils";
@@ -327,6 +329,7 @@ enum EXTENDED_APIS {
     BI_VERIFY_TYPE_DELETE = 'typesManager/verifyTypeDelete',
     BI_DELETE_TYPE = 'typesManager/deleteType',
     BI_AVAILABLE_NODES = 'flowDesignService/getAvailableNodes',
+    BI_AVAILABLE_ITEMS_BY_CATEGORY = 'flowDesignService/getAvailableItemsByCategory',
     BI_AVAILABLE_MODEL_PROVIDERS = 'flowDesignService/getAvailableModelProviders',
     BI_AVAILABLE_VECTOR_STORES = 'flowDesignService/getAvailableVectorStores',
     BI_AVAILABLE_EMBEDDING_PROVIDERS = 'flowDesignService/getAvailableEmbeddingProviders',
@@ -993,6 +996,10 @@ export class ExtendedLangClient extends LanguageClient implements ExtendedLangCl
 
     async getAvailableNodes(params: BIAvailableNodesRequest): Promise<BIAvailableNodesResponse> {
         return this.sendRequest<BIAvailableNodesResponse>(EXTENDED_APIS.BI_AVAILABLE_NODES, params);
+    }
+
+    async getAvailableItemsByCategory(params: BIAvailableItemsByCategoryRequest): Promise<BIAvailableItemsByCategoryResponse> {
+        return this.sendRequest<BIAvailableItemsByCategoryResponse>(EXTENDED_APIS.BI_AVAILABLE_ITEMS_BY_CATEGORY, params);
     }
 
     async getAvailableModelProviders(params: BIAvailableNodesRequest): Promise<BIAvailableNodesResponse> {

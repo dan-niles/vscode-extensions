@@ -852,6 +852,16 @@ export type BIAvailableNodesResponse = {
     categories: Category[];
 };
 
+export interface BIAvailableItemsByCategoryRequest {
+    category: string;
+    filePath: string;
+    position: LinePosition;
+}
+
+export type BIAvailableItemsByCategoryResponse = {
+    categories: Category[];
+};
+
 export interface BIGetVisibleVariableTypesRequest {
     filePath: string;
     position: LinePosition;

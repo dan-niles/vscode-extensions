@@ -25,6 +25,8 @@ import {
     ArtifactData,
     BIAiSuggestionsRequest,
     BIAiSuggestionsResponse,
+    BIAvailableItemsByCategoryRequest,
+    BIAvailableItemsByCategoryResponse,
     BIAvailableNodesRequest,
     BIAvailableNodesResponse,
     BICopilotContextRequest,
@@ -1987,11 +1989,29 @@ async getConfigVariablesV2(params: ConfigVariableRequest): Promise<ConfigVariabl
         };
         return new Promise((resolve, reject) => {
             StateMachine.langClient().verifyTypeDelete(request)
-                .then((response) => {                    
+                .then((response) => {
                     resolve(response);
                 })
                 .catch((error) => {
                     reject(error);
+                });
+        });
+    }
+
+    async getAvailableItemsByCategory(params: BIAvailableItemsByCategoryRequest): Promise<BIAvailableItemsByCategoryResponse> {
+        console.log(">>> requesting bi available items by category from ls", params);
+        return new Promise((resolve) => {
+            StateMachine.langClient()
+                .getAvailableItemsByCategory(params)
+                .then((model) => {
+                    console.log(">>> bi available items by category from ls", model);
+                    resolve(model);
+                })
+                .catch((error) => {
+                    console.log(">>> error fetching available items by category from ls", error);
+                    return new Promise((resolve) => {
+                        resolve(undefined);
+                    });
                 });
         });
     }

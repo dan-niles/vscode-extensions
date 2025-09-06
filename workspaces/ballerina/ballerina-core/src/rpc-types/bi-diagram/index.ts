@@ -93,7 +93,9 @@ import {
     DeleteTypeRequest,
     DeleteTypeResponse,
     VerifyTypeDeleteRequest,
-    VerifyTypeDeleteResponse
+    VerifyTypeDeleteResponse,
+    BIAvailableItemsByCategoryRequest,
+    BIAvailableItemsByCategoryResponse
 } from "../../interfaces/extended-lang-client";
 import {
     ProjectRequest,
@@ -124,6 +126,7 @@ export interface BIDiagramAPI {
     deleteFlowNode: (params: BISourceCodeRequest) => Promise<UpdatedArtifactsResponse>;
     deleteByComponentInfo: (params: BIDeleteByComponentInfoRequest) => Promise<BIDeleteByComponentInfoResponse>;
     getAvailableNodes: (params: BIAvailableNodesRequest) => Promise<BIAvailableNodesResponse>;
+    getAvailableItemsByCategory: (params: BIAvailableItemsByCategoryRequest) => Promise<BIAvailableItemsByCategoryResponse>;
     getAvailableModelProviders: (params: BIAvailableNodesRequest) => Promise<BIAvailableNodesResponse>;
     getAvailableVectorStores: (params: BIAvailableNodesRequest) => Promise<BIAvailableNodesResponse>;
     getAvailableEmbeddingProviders: (params: BIAvailableNodesRequest) => Promise<BIAvailableNodesResponse>;

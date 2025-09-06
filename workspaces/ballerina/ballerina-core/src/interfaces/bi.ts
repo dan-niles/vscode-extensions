@@ -354,6 +354,7 @@ export type Scope = "module" | "local" | "object";
 export type NodeKind =
     | "ACTION_OR_EXPRESSION"
     | "AGENT"
+    | "AGENTS"
     | "AGENT_CALL"
     | "ASSIGN"
     | "AUTOMATION"

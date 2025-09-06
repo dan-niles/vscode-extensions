@@ -24,6 +24,8 @@ import {
     AddImportItemResponse,
     BIAiSuggestionsRequest,
     BIAiSuggestionsResponse,
+    BIAvailableItemsByCategoryRequest,
+    BIAvailableItemsByCategoryResponse,
     BIAvailableNodesRequest,
     BIAvailableNodesResponse,
     BIDeleteByComponentInfoRequest,
@@ -133,6 +135,7 @@ import {
     getAvailableChunkers,
     getAvailableDataLoaders,
     getAvailableEmbeddingProviders,
+    getAvailableItemsByCategory,
     getAvailableModelProviders,
     getAvailableNodes,
     getAvailableVectorKnowledgeBases,
@@ -220,6 +223,10 @@ export class BiDiagramRpcClient implements BIDiagramAPI {
 
     getAvailableNodes(params: BIAvailableNodesRequest): Promise<BIAvailableNodesResponse> {
         return this._messenger.sendRequest(getAvailableNodes, HOST_EXTENSION, params);
+    }
+
+    getAvailableItemsByCategory(params: BIAvailableItemsByCategoryRequest): Promise<BIAvailableItemsByCategoryResponse> {
+        return this._messenger.sendRequest(getAvailableItemsByCategory, HOST_EXTENSION, params);
     }
 
     getAvailableModelProviders(params: BIAvailableNodesRequest): Promise<BIAvailableNodesResponse> {
