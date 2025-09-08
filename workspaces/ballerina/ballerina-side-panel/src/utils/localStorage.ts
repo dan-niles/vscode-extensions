@@ -50,6 +50,7 @@ export const getDefaultExpandedState = (categories: string[]): ExpandedCategorie
         "Connections",
         "Standard Library",
         "Current Integration",
+        "Agents",
         "Model Providers",
         "Vector Stores",
         "Embedding Providers",

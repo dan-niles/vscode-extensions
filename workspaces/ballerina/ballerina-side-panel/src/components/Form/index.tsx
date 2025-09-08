@@ -238,7 +238,6 @@ namespace S {
             font-size: 13px;
             margin: 0;
             line-height: 1.5;
-            margin-bottom: 8px;
             font-family: var(--vscode-font-family);
         }
 

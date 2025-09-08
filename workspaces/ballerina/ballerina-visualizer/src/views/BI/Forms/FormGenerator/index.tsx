@@ -37,7 +37,8 @@ import {
     CodeData,
     VisualizableField,
     Member,
-    TypeNodeKind
+    TypeNodeKind,
+    NodeMetadata
 } from "@wso2/ballerina-core";
 import {
     FormField,
@@ -379,7 +380,8 @@ export const FormGenerator = forwardRef<FormExpressionEditorRef, FormProps>(func
         console.log(">>> Fields with RECORD_TYPE:", recordTypeFields);
 
         // get node properties
-        const fields = convertNodePropertiesToFormFields(enrichedNodeProperties || formProperties, connections, clientName);
+        const paramsToHide = (node?.metadata?.data as NodeMetadata)?.paramsToHide || [];
+        const fields = convertNodePropertiesToFormFields(enrichedNodeProperties || formProperties, connections, clientName, paramsToHide);
         setFields(fields);
         setFormImports(getImportsForFormFields(fields));
     };

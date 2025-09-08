@@ -52,6 +52,7 @@ export enum SidePanelView {
     FUNCTION_LIST = "FUNCTION_LIST",
     DATA_MAPPER_LIST = "DATA_MAPPER_LIST",
     NP_FUNCTION_LIST = "NP_FUNCTION_LIST",
+    AGENT_LIST = "AGENT_LIST",
     MODEL_PROVIDERS = "MODEL_PROVIDERS",
     MODEL_PROVIDER_LIST = "MODEL_PROVIDER_LIST",
     VECTOR_STORES = "VECTOR_STORES",
@@ -106,6 +107,7 @@ interface PanelManagerProps {
     onAddFunction?: () => void;
     onAddNPFunction?: () => void;
     onAddDataMapper?: () => void;
+    onAddAgent?: () => void;
     onAddModelProvider?: () => void;
     onAddVectorStore?: () => void;
     onAddEmbeddingProvider?: () => void;
@@ -167,6 +169,7 @@ export function PanelManager(props: PanelManagerProps) {
         onAddFunction,
         onAddNPFunction,
         onAddDataMapper,
+        onAddAgent,
         onAddModelProvider,
         onAddVectorStore,
         onAddEmbeddingProvider,
@@ -376,6 +379,20 @@ export function PanelManager(props: PanelManagerProps) {
                         onAddFunction={onAddDataMapper}
                         onClose={onClose}
                         title={"Data Mappers"}
+                        onBack={canGoBack ? onBack : undefined}
+                    />
+                );
+
+            case SidePanelView.AGENT_LIST:
+                return (
+                    <NodeList
+                        categories={categories}
+                        onSelect={onSelectNode}
+                        onAdd={onAddAgent}
+                        addButtonLabel={"Add Agent"}
+                        onClose={onClose}
+                        title={"Agents"}
+                        searchPlaceholder={"Search agents"}
                         onBack={canGoBack ? onBack : undefined}
                     />
                 );

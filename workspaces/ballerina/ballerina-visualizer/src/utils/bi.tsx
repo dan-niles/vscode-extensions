@@ -221,11 +221,14 @@ export function convertChunkerCategoriesToSidePanelCategories(categories: Catego
 export function convertNodePropertiesToFormFields(
     nodeProperties: NodeProperties,
     connections?: FlowNode[],
-    clientName?: string
+    clientName?: string,
+    skipFields?: string[]
 ): FormField[] {
     const formFields: FormField[] = [];
 
     for (const key in nodeProperties) {
+        if (skipFields?.includes(key))
+            continue;
         if (nodeProperties.hasOwnProperty(key)) {
             const expression = nodeProperties[key as NodePropertyKey];
             if (expression) {

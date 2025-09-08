@@ -78,6 +78,7 @@ const NODE_COLOR_GROUPS = {
     
     // AI/NP function group - cyan variants
     CYAN_FUNCTION_GROUP: [
+        "AGENTS",
         "AGENT_CALL",
         "NP_FUNCTION",
         "NP_FUNCTION_CALL",
@@ -225,6 +226,7 @@ const NODE_ICONS: Record<NodeKind, React.FC<{ size: number; color: string }>> = 
     ROLLBACK: ({ size, color }) => <Icon name="bi-rollback" sx={{ fontSize: size, width: size, height: size, color }} />,
     FAIL: ({ size, color }) => <Icon name="bi-error" sx={{ fontSize: size, width: size, height: size, color }} />,
     RETRY: ({ size, color }) => <Icon name="bi-retry" sx={{ fontSize: size, width: size, height: size, color }} />,
+    AGENTS: ({ size, color }) => <Icon name="bi-ai-agent" sx={{ fontSize: size, width: size, height: size, color }} />,
     AGENT_CALL: ({ size, color }) => <Icon name="bi-ai-agent" sx={{ fontSize: size, width: size, height: size, color }} />,
     MODEL_PROVIDER: ({ size, color }) => <Icon name="bi-ai-model" sx={{ fontSize: size, width: size, height: size, color }} />,
     MODEL_PROVIDERS: ({ size, color }) => <Icon name="bi-ai-model" sx={{ fontSize: size, width: size, height: size, color }} />,

@@ -75,10 +75,15 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
         useConnectionContainer: false
     },
     "Agents": {
-        title: "Agents", 
-        actions: [],
+        title: "Agents",
+        actions: [{
+            type: 'add',
+            tooltip: "Add Agent", // Will use addButtonLabel from props
+            emptyStateLabel: "", // Will use addButtonLabel from props
+            handlerKey: 'onAdd'
+        }],
         showWhenEmpty: true,
-        useConnectionContainer: false
+        useConnectionContainer: true
     },
     "Model Providers": {
         title: "Model Providers",

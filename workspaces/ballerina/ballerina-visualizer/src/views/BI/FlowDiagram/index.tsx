@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useRpcContext } from "@wso2/ballerina-rpc-client";
 import styled from "@emotion/styled";
-import { removeMcpServerFromAgentNode } from "../AIChatAgent/utils";
+import { getAiModuleOrg, removeMcpServerFromAgentNode } from "../AIChatAgent/utils";
 import { MemoizedDiagram } from "@wso2/bi-diagram";
 import {
     BIAvailableNodesRequest,
@@ -146,6 +146,7 @@ export function BIFlowDiagram(props: BIFlowDiagramProps) {
     const updatedNodeRef = useRef<FlowNode>(undefined);
     const [targetLineRange, setTargetLineRange] = useState<LineRange>(targetRef?.current);
 
+    const isCreatingNewAgent = useRef<boolean>(false);
     const isCreatingNewModelProvider = useRef<boolean>(false);
     const isCreatingNewVectorStore = useRef<boolean>(false);
     const isCreatingNewEmbeddingProvider = useRef<boolean>(false);
@@ -284,6 +285,39 @@ export function BIFlowDiagram(props: BIFlowDiagramProps) {
 
         const targetItem = navigationStack.find((item) => item.view === targetView);
         return !!targetItem;
+    };
+
+    const handleAgentAdded = async () => {
+        console.log(">>> Agent added, navigating back to agent list");
+
+        // Try to navigate back to AGENT_LIST in the stack
+        const foundInStack = popNavigationStackUntilView(SidePanelView.AGENT_LIST);
+        if (foundInStack) {
+            setShowProgressIndicator(true);
+            try {
+                const response = await rpcClient.getBIDiagramRpcClient().getAvailableItemsByCategory({
+                    position: targetRef.current.startLine,
+                    filePath: model?.fileName,
+                    category: "AGENTS",
+                });
+                console.log(">>> Refreshed agent list", response);
+                setCategories(
+                    convertFunctionCategoriesToSidePanelCategories(
+                        response.categories as Category[],
+                        FUNCTION_TYPE.REGULAR
+                    )
+                );
+                setSidePanelView(SidePanelView.AGENT_LIST);
+                setShowSidePanel(true);
+            } catch (error) {
+                console.error(">>> Error refreshing agent list", error);
+            } finally {
+                setShowProgressIndicator(false);
+            }
+        } else {
+            console.log(">>> AGENT_LIST not found in navigation stack, closing panel");
+            closeSidePanelAndFetchUpdatedFlowModel();
+        }
     };
 
     const handleModelProviderAdded = async () => {
@@ -638,6 +672,7 @@ export function BIFlowDiagram(props: BIFlowDiagramProps) {
         changeTargetRange(undefined);
         selectedClientName.current = undefined;
         showEditForm.current = false;
+        isCreatingNewAgent.current = false;
         isCreatingNewModelProvider.current = false;
         isCreatingNewVectorStore.current = false;
         isCreatingNewEmbeddingProvider.current = false;
@@ -905,6 +940,11 @@ export function BIFlowDiagram(props: BIFlowDiagramProps) {
         });
         if (currentArtifact) {
             console.log(">>> currentArtifact", currentArtifact);
+            if (isCreatingNewAgent.current) {
+                isCreatingNewAgent.current = false;
+                await handleAgentAdded();
+                return;
+            }
             if (isCreatingNewModelProvider.current) {
                 isCreatingNewModelProvider.current = false;
                 await handleModelProviderAdded();
@@ -1027,6 +1067,31 @@ export function BIFlowDiagram(props: BIFlowDiagramProps) {
                             )
                         );
                         setSidePanelView(SidePanelView.NP_FUNCTION_LIST);
+                        setShowSidePanel(true);
+                    })
+                    .finally(() => {
+                        setShowProgressIndicator(false);
+                    });
+                break;
+
+            case "AGENTS":
+                setShowProgressIndicator(true);
+                rpcClient
+                    .getBIDiagramRpcClient()
+                    .getAvailableItemsByCategory({
+                        position: targetRef.current.startLine,
+                        filePath: model?.fileName || fileName,
+                        category: "AGENTS",
+                    })
+                    .then((response) => {
+                        console.log(">>> List of agents", response);
+                        setCategories(
+                            convertFunctionCategoriesToSidePanelCategories(
+                                response.categories as Category[],
+                                FUNCTION_TYPE.REGULAR
+                            )
+                        );
+                        setSidePanelView(SidePanelView.AGENT_LIST);
                         setShowSidePanel(true);
                     })
                     .finally(() => {
@@ -1564,6 +1629,41 @@ export function BIFlowDiagram(props: BIFlowDiagramProps) {
             isPopup: true,
         });
     };
+
+    const handleOnAddNewAgent = async () => {
+        console.log(">>> Adding new agent");
+        isCreatingNewAgent.current = true;
+        setShowProgressIndicator(true);
+
+        // Push current state to navigation stack
+        pushToNavigationStack(sidePanelView, categories, selectedNodeRef.current, selectedClientName.current);
+
+        const aiModuleOrg = await getAiModuleOrg(rpcClient);
+
+        // Use search to get available agent types
+        const response = await rpcClient.getBIDiagramRpcClient().search({
+            position: { startLine: targetRef.current.startLine, endLine: targetRef.current.endLine },
+            filePath: model?.fileName,
+            queryMap: { orgName: aiModuleOrg },
+            searchKind: "AGENT",
+        });
+        if (!response?.categories?.[0]?.items?.[0]) {
+            throw new Error('No agent node found in search response');
+        }
+        const agentNode = response.categories[0].items[0] as AvailableNode;
+        const agentNodeTemplate = await rpcClient.getBIDiagramRpcClient().getNodeTemplate({
+            position: targetRef.current.startLine,
+            filePath: model?.fileName,
+            id: agentNode.codedata,
+        });
+
+        selectedNodeRef.current = agentNodeTemplate.flowNode;
+        showEditForm.current = false;
+        setSidePanelView(SidePanelView.FORM);
+        setShowSidePanel(true);
+        setShowProgressIndicator(false);
+    };
+
 
     const handleOnAddNewModelProvider = () => {
         console.log(">>> Adding new model provider");
@@ -2178,6 +2278,7 @@ export function BIFlowDiagram(props: BIFlowDiagramProps) {
                 onAddFunction={handleOnAddFunction}
                 onAddNPFunction={handleOnAddNPFunction}
                 onAddDataMapper={handleOnAddDataMapper}
+                onAddAgent={handleOnAddNewAgent}
                 onAddModelProvider={handleOnAddNewModelProvider}
                 onAddVectorStore={handleOnAddNewVectorStore}
                 onAddEmbeddingProvider={handleOnAddNewEmbeddingProvider}

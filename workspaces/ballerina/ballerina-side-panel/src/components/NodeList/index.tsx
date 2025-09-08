@@ -52,6 +52,7 @@ namespace S {
     `;
 
     export const PanelBody = styled(SidePanelBody)`
+        overflow-y: auto;
         height: calc(100vh - 100px);
         padding-top: 0;
     `;
@@ -265,7 +266,7 @@ namespace S {
         background-color: ${({ hasBackground }) => hasBackground ? `rgba(255, 255, 255, 0.02)` : 'transparent'};
         border-radius: 5px;
         padding: ${({ hasBackground }) => hasBackground ? '0 12px' : '0'};
-        margin-bottom: 16px;
+        margin-bottom: 8px;
         border: ${({ hasBackground }) => hasBackground ? `1px solid ${ThemeColors.OUTLINE_VARIANT}` : 'none'};
         transition: all 0.2s ease;
         
