@@ -22,6 +22,14 @@ export interface ChatReqMessage {
 
 export interface ChatRespMessage {
     message: string;
+    traceId?: string;
+    toolCalls?: ToolCallSummary[];
+}
+
+export interface ToolCallSummary {
+    spanId: string;
+    toolName: string;
+    output: string;
 }
 
 export interface TraceStatus {
@@ -29,5 +37,7 @@ export interface TraceStatus {
 }
 
 export interface TraceInput {
-    message: string;
+    message?: string;
+    traceId?: string;
+    focusSpanId?: string;
 }
