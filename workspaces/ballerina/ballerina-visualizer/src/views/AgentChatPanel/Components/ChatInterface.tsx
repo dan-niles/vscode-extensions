@@ -130,12 +130,12 @@ const MessageBubble = styled.div<{ isUser: boolean; isError?: boolean; isLoading
         content: "";
         position: absolute;
         inset: 0;
-        background-color: ${({ isUser }: { isUser: boolean }) =>
-            isUser ? "var(--vscode-button-background)" : "var(--vscode-tab-inactiveBackground)"};
-        opacity: ${({ isUser }: { isUser: boolean }) => (isUser ? "0.3" : "1")};
+        background-color: ${({ isUser, isError }: { isUser: boolean; isError?: boolean }) =>
+        isError ? "var(--vscode-errorForeground)" : isUser ? "var(--vscode-button-background)" : "var(--vscode-input-background)"};
+        opacity: ${({ isUser, isError }: { isUser: boolean; isError?: boolean }) => (isUser ? "0.3" : isError ? "0.05" : "1")};
         border-radius: inherit;
         border: 1px solid ${({ isUser }: { isUser: boolean }) =>
-            isUser ? "var(--vscode-peekView-border)" : "var(--vscode-panel-border)"};;
+        isUser ? "var(--vscode-peekView-border)" : "var(--vscode-panel-border)"};;
         z-index: -1;
     }
 
@@ -190,13 +190,13 @@ const ShowLogsButton = styled.button`
 // Preprocess LaTeX delimiters to convert \(...\) and \[...\] to $...$ and $$...$$
 function preprocessLatex(text: string): string {
     if (!text || typeof text !== 'string') return text;
-    
+
     // Convert display math \[...\] to $$...$$
     let processed = text.replace(/\\\[(.*?)\\\]/gs, (_, math) => `$$${math}$$`);
-    
+
     // Convert inline math \(...\) to $...$
     processed = processed.replace(/\\\((.*?)\\\)/gs, (_, math) => `$${math}$`);
-    
+
     return processed;
 }
 
@@ -323,8 +323,8 @@ const ChatInterface: React.FC = () => {
                                 </MessageBubble>
                                 {msg.isUser && (
                                     <ProfilePic>
-                                        <Codicon
-                                            name="account"
+                                        <Icon
+                                            name="bi-user"
                                             sx={{ width: 18, height: 18 }}
                                             iconSx={{
                                                 fontSize: "18px",
