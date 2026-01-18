@@ -16,7 +16,7 @@
  * under the License.
  */
 
-import { ChatReqMessage, ChatRespMessage, ToolCallSummary, TraceInput, TraceStatus } from "./interfaces";
+import { ChatReqMessage, ChatRespMessage, ToolCallSummary, ExecutionStep, TraceInput, TraceStatus } from "./interfaces";
 
 export interface AgentChatAPI {
     getChatMessage: (params: ChatReqMessage) => Promise<ChatRespMessage>;
@@ -25,4 +25,4 @@ export interface AgentChatAPI {
     showTraceView: (params: TraceInput) => Promise<void>;
 }
 
-export type { ChatReqMessage, ChatRespMessage, ToolCallSummary, TraceInput, TraceStatus };
+export type { ChatReqMessage, ChatRespMessage, ToolCallSummary, ExecutionStep, TraceInput, TraceStatus };
