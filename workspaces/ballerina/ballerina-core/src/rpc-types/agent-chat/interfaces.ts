@@ -52,4 +52,5 @@ export interface TraceInput {
     message?: string;
     traceId?: string;
     focusSpanId?: string;
+    openInFocusMode?: boolean;
 }
