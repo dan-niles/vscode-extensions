@@ -26,6 +26,7 @@ import {
     CONFIGURE_DEFAULT_MODEL_COMMAND,
     DEFAULT_PROVIDER_ADDED,
     LOGIN_REQUIRED_WARNING_FOR_DEFAULT_MODEL,
+    NO_AUTHENTICATION_CREDENTIALS_FOUND,
     SIGN_IN_BI_COPILOT
 } from './constants';
 import {
@@ -163,7 +164,7 @@ export function activateAIFeatures(ballerinaExternalInstance: BallerinaExtension
                     window.showInformationMessage(DEFAULT_PROVIDER_ADDED);
                 }
             } catch (error) {
-                if ((error as Error).message === REFRESH_TOKEN_NOT_AVAILABLE_ERROR_MESSAGE || (error as Error).message === TOKEN_REFRESH_ONLY_SUPPORTED_FOR_BI_INTEL) {
+                if ((error as Error).message === REFRESH_TOKEN_NOT_AVAILABLE_ERROR_MESSAGE || (error as Error).message === TOKEN_REFRESH_ONLY_SUPPORTED_FOR_BI_INTEL || (error as Error).message === NO_AUTHENTICATION_CREDENTIALS_FOUND) {
                     window.showWarningMessage(LOGIN_REQUIRED_WARNING_FOR_DEFAULT_MODEL, SIGN_IN_BI_COPILOT).then(selection => {
                         if (selection === SIGN_IN_BI_COPILOT) {
                             AIStateMachine.service().send(AIMachineEventType.LOGIN);

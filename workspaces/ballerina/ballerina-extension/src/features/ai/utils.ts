@@ -24,7 +24,7 @@ import { StateMachine } from "../../stateMachine";
 import { getRefreshedAccessToken, REFRESH_TOKEN_NOT_AVAILABLE_ERROR_MESSAGE } from '../../utils/ai/auth';
 import { AIStateMachine } from '../../views/ai-panel/aiMachine';
 import { AIMachineEventType } from '@wso2/ballerina-core/lib/state-machine-types';
-import { CONFIG_FILE_NAME, ERROR_NO_BALLERINA_SOURCES, PROGRESS_BAR_MESSAGE_FROM_WSO2_DEFAULT_MODEL } from './constants';
+import { CONFIG_FILE_NAME, ERROR_NO_BALLERINA_SOURCES, NO_AUTHENTICATION_CREDENTIALS_FOUND, PROGRESS_BAR_MESSAGE_FROM_WSO2_DEFAULT_MODEL } from './constants';
 import { getCurrentBallerinaProjectFromContext } from '../config-generator/configGenerator';
 import { BallerinaProject, LoginMethod } from '@wso2/ballerina-core';
 import { BallerinaExtension } from 'src/core';
@@ -149,7 +149,7 @@ export async function getTokenForDefaultModel() {
         const credentials = await getAuthCredentials();
 
         if (!credentials) {
-            throw new Error('No authentication credentials found.');
+            throw new Error(NO_AUTHENTICATION_CREDENTIALS_FOUND);
         }
 
         // Check login method and handle accordingly

@@ -18,6 +18,7 @@
  * THIS FILE INCLUDES AUTO GENERATED CODE
  */
 import {
+    AIMachineEventType,
     AIMachineSnapshot,
     AIPanelAPI,
     AIPanelPrompt,
@@ -34,6 +35,8 @@ import {
     MetadataWithAttachments,
     ProcessContextTypeCreationRequest,
     ProcessMappingParametersRequest,
+    PromptEnhancementRequest,
+    PromptEnhancementResponse,
     RequirementSpecification,
     RestoreCheckpointRequest,
     SemanticDiffRequest,
@@ -45,8 +48,9 @@ import {
 } from "@wso2/ballerina-core";
 import * as fs from 'fs';
 import path from "path";
-import { workspace } from 'vscode';
+import { workspace, window } from 'vscode';
 import { URI } from "vscode-uri";
+import { LOGIN_REQUIRED_WARNING, SIGN_IN_BI_COPILOT } from '../../features/ai/constants';
 
 import { isNumber } from "lodash";
 import { getServiceDeclarationNames } from "../../../src/features/ai/documentation/utils";
@@ -59,6 +63,7 @@ import { generateOpenAPISpec } from "../../features/ai/openapi/index";
 import { OLD_BACKEND_URL } from "../../features/ai/utils";
 import { fetchWithAuth } from "../../features/ai/utils/ai-client";
 import { getLLMDiagnosticArrayAsString } from "../../features/natural-programming/utils";
+import { enhancePrompt as enhancePromptService } from "../../features/ai/service/prompt-enhancement/promptEnhancement";
 import { StateMachine, updateView } from "../../stateMachine";
 import { getLoginMethod, loginGithubCopilot } from "../../utils/ai/auth";
 import { normalizeCodeContext } from "../../views/ai-panel/codeContextUtils";
@@ -91,7 +96,7 @@ export class AiPanelRpcManager implements AIPanelAPI {
 
     async getDefaultPrompt(): Promise<AIPanelPrompt> {
         let defaultPrompt: AIPanelPrompt = extension.aiChatDefaultPrompt;
-        
+
         // Normalize code context to use relative paths
         if (defaultPrompt && 'codeContext' in defaultPrompt && defaultPrompt.codeContext) {
             defaultPrompt = {
@@ -99,7 +104,7 @@ export class AiPanelRpcManager implements AIPanelAPI {
                 codeContext: normalizeCodeContext(defaultPrompt.codeContext)
             };
         }
-        
+
         return new Promise((resolve) => {
             resolve(defaultPrompt);
         });
@@ -368,6 +373,18 @@ export class AiPanelRpcManager implements AIPanelAPI {
         } catch (error) {
             return false;
         }
+    }
+
+    async enhancePrompt(params: PromptEnhancementRequest): Promise<PromptEnhancementResponse> {
+        return await enhancePromptService(params);
+    }
+
+    promptForLogin(): void {
+        window.showWarningMessage(LOGIN_REQUIRED_WARNING, SIGN_IN_BI_COPILOT).then(selection => {
+            if (selection === SIGN_IN_BI_COPILOT) {
+                AIStateMachine.service().send(AIMachineEventType.LOGIN);
+            }
+        });
     }
 
     async generateAgent(params: GenerateAgentCodeRequest): Promise<boolean> {
