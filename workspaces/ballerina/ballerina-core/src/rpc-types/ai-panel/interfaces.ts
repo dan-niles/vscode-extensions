@@ -491,3 +491,24 @@ export interface UsageResponse {
     remainingUsagePercentage: number;
     resetsIn: number; // in seconds
 }
+
+// ==================================
+// Prompt Enhancement Related Interfaces
+// ==================================
+
+export enum PromptMode {
+    ROLE = "role",
+    INSTRUCTIONS = "instructions",
+    QUERY = "query",
+    DEFAULT = "default"
+}
+
+export interface PromptEnhancementRequest {
+    originalPrompt: string;
+    additionalInstructions?: string;
+    mode: PromptMode;
+}
+
+export interface PromptEnhancementResponse {
+    enhancedPrompt: string;
+}

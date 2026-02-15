@@ -40,6 +40,7 @@ import {
     declinePlan,
     declineTask,
     DocGenerationRequest,
+    enhancePrompt,
     generateAgent,
     GenerateAgentCodeRequest,
     generateContextTypes,
@@ -71,6 +72,8 @@ import {
     PlanApprovalRequest,
     ProcessContextTypeCreationRequest,
     ProcessMappingParametersRequest,
+    PromptEnhancementRequest,
+    promptForLogin,
     promptGithubAuthorize,
     provideConnectorSpec,
     provideConfiguration,
@@ -139,4 +142,6 @@ export function registerAiPanelRpcHandlers(messenger: Messenger) {
     messenger.onRequest(updateChatMessage, (args: UpdateChatMessageRequest) => rpcManger.updateChatMessage(args));
     messenger.onRequest(getActiveTempDir, () => rpcManger.getActiveTempDir());
     messenger.onRequest(getUsage, () => rpcManger.getUsage());
+    messenger.onRequest(enhancePrompt, (args: PromptEnhancementRequest) => rpcManger.enhancePrompt(args));
+    messenger.onNotification(promptForLogin, () => rpcManger.promptForLogin());
 }

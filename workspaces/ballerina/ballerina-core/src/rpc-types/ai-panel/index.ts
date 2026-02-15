@@ -45,6 +45,8 @@ import {
     CheckpointInfo,
     AbortAIGenerationRequest,
     UsageResponse,
+    PromptEnhancementRequest,
+    PromptEnhancementResponse
 } from "./interfaces";
 
 export interface AIPanelAPI {
@@ -109,4 +111,9 @@ export interface AIPanelAPI {
     updateChatMessage: (params: UpdateChatMessageRequest) => Promise<void>;
     getActiveTempDir: () => Promise<string>;
     getUsage: () => Promise<UsageResponse | undefined>;
+    // ==================================
+    // Prompt Enhancement
+    // ==================================
+    enhancePrompt: (params: PromptEnhancementRequest) => Promise<PromptEnhancementResponse>;
+    promptForLogin: () => void;
 }
