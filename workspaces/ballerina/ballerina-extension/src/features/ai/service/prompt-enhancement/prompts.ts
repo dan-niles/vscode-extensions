@@ -142,11 +142,16 @@ You are enhancing a **user query** that will be sent to an AI agent.
       break;
   }
 
+  // Skip "INSTRUCTIONAL TRANSFORMATION" for ROLE and QUERY modes since those shouldn't be converted to system prompts
+  const applicableOutputRules = (mode === PromptMode.ROLE || mode === PromptMode.QUERY)
+    ? outputRules.replace(/### INSTRUCTIONAL TRANSFORMATION[\s\S]*?(?=### OUTPUT FORMAT)/, "")
+    : outputRules;
+
   const parts = [globalDirectives, baseDirectives];
   if (modeDirectives) {
     parts.push(modeDirectives.trim());
   }
-  parts.push(outputRules);
+  parts.push(applicableOutputRules);
 
   return parts.join("\n\n").trim();
 }
