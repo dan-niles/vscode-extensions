@@ -36,6 +36,8 @@ import {
     PlanApprovalRequest,
     ProcessContextTypeCreationRequest,
     ProcessMappingParametersRequest,
+    PromptEnhancementRequest,
+    PromptEnhancementResponse,
     RequirementSpecification,
     RestoreCheckpointRequest,
     SemanticDiffRequest,
@@ -57,6 +59,7 @@ import {
     declineChanges,
     declinePlan,
     declineTask,
+    enhancePrompt,
     generateAgent,
     generateContextTypes,
     generateInlineMappingCode,
@@ -81,6 +84,7 @@ import {
     markAlertShown,
     openAIPanel,
     openChatWindowWithCommand,
+    promptForLogin,
     promptGithubAuthorize,
     provideConnectorSpec,
     restoreCheckpoint,
@@ -269,5 +273,13 @@ export class AiPanelRpcClient implements AIPanelAPI {
 
     getActiveTempDir(): Promise<string> {
         return this._messenger.sendRequest(getActiveTempDir, HOST_EXTENSION);
+    }
+
+    enhancePrompt(params: PromptEnhancementRequest): Promise<PromptEnhancementResponse> {
+        return this._messenger.sendRequest(enhancePrompt, HOST_EXTENSION, params);
+    }
+
+    promptForLogin(): void {
+        return this._messenger.sendNotification(promptForLogin, HOST_EXTENSION);
     }
 }
