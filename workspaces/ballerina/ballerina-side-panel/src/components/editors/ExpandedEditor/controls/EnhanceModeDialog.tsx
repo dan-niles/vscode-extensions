@@ -197,12 +197,12 @@ const SUGGESTIONS_BY_MODE: Record<PromptMode, string[]> = {
         "Adjust the tone"
     ],
     [PromptMode.INSTRUCTIONS]: [
+        "Make it shorter",
         "Make it more detailed",
         "Add step-by-step reasoning",
         "Define output format",
         "Add error handling",
-        "Fix vague instructions",
-        "Make it shorter"
+        "Fix vague instructions"
     ],
     [PromptMode.QUERY]: [
         "Be more specific",
@@ -299,7 +299,6 @@ export const EnhanceModeDialog: React.FC<EnhanceModeDialogProps> = ({
                             name="bi-close"
                             onClick={handleClose}
                             sx={{
-                                cursor: isLoading ? 'not-allowed' : 'pointer',
                                 fontSize: '16px',
                                 width: '16px',
                                 height: '16px',
