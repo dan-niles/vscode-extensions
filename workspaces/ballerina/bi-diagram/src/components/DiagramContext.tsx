@@ -16,8 +16,8 @@
  * under the License.
  */
 
-import React, { useState, RefObject } from "react";
-import { Flow, FlowNode, Branch, LineRange, NodePosition, ToolData } from "../utils/types";
+import React, { useState, useSyncExternalStore, RefObject } from "react";
+import { Flow, FlowNode, Branch, LineRange, ToolData } from "../utils/types";
 import { CompletionItem, FormExpressionEditorRef, HelperPaneHeight } from "@wso2/ui-toolkit";
 import { ExpressionProperty, JoinProjectPathRequest, JoinProjectPathResponse, RecordTypeField, TextEdit, VisualizerLocation } from "@wso2/ballerina-core";
 import { HelperpaneOnChangeOptions, InputMode } from "@wso2/ballerina-side-panel";
@@ -175,7 +175,7 @@ export const DiagramContext = React.createContext<DiagramContextState>({
     },
     readOnly: false,
     lockCanvas: false,
-    setLockCanvas: (lock: boolean) => { },
+    setLockCanvas: (_lock: boolean) => { },
     isUserAuthenticated: false,
     expressionContext: {
         completions: [],
@@ -196,4 +196,146 @@ export function DiagramContextProvider(props: { children: React.ReactNode; value
     };
 
     return <DiagramContext.Provider value={ctx}>{props.children}</DiagramContext.Provider>;
+}
+
+// --- Module-level trace animation store ---
+// This bypasses the React context/prop chain which doesn't propagate through
+// @projectstorm/react-diagrams engine's widget rendering.
+
+export type AnimationPhase = 'active' | 'fading-out';
+
+export type TraceAnimationEntry = {
+    type: 'invoke_agent' | 'chat' | 'execute_tool';
+    toolName?: string;
+    phase: AnimationPhase;
+};
+
+export type TraceAnimationState = {
+    activeAgentToolNames: string[];
+    entries: TraceAnimationEntry[];
+    systemInstructions?: string;
+} | undefined;
+
+const FADE_OUT_DURATION_MS = 400;
+
+let traceAnimationState: TraceAnimationState = undefined;
+const traceAnimationListeners = new Set<() => void>();
+const fadeOutTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function getTraceAnimationSnapshot(): TraceAnimationState {
+    return traceAnimationState;
+}
+
+function subscribeTraceAnimation(listener: () => void): () => void {
+    traceAnimationListeners.add(listener);
+    return () => traceAnimationListeners.delete(listener);
+}
+
+function notifyListeners() {
+    traceAnimationListeners.forEach(l => l());
+}
+
+function entryKey(type: string, toolName?: string): string {
+    return toolName ? `${type}:${toolName}` : type;
+}
+
+function cleanupFadedEntries(keyToClean: string) {
+    fadeOutTimers.delete(keyToClean);
+    if (!traceAnimationState) return;
+    const remaining = traceAnimationState.entries.filter(
+        e => !(entryKey(e.type, e.toolName) === keyToClean && e.phase === 'fading-out')
+    );
+    if (remaining.length === 0) {
+        traceAnimationState = undefined;
+    } else {
+        traceAnimationState = { ...traceAnimationState, entries: remaining };
+    }
+    notifyListeners();
+}
+
+export function setTraceAnimationActive(
+    toolNames: string[],
+    type: 'invoke_agent' | 'chat' | 'execute_tool',
+    activeToolName?: string,
+    systemInstructions?: string,
+) {
+    const key = entryKey(type, activeToolName);
+
+    // Clear any pending fade-out timer for this entry
+    const existing = fadeOutTimers.get(key);
+    if (existing) {
+        clearTimeout(existing);
+        fadeOutTimers.delete(key);
+    }
+
+    const prevEntries = traceAnimationState?.entries || [];
+    const activeTools = prevEntries.filter(e => e.type === 'execute_tool' && e.phase === 'active').map(e => e.toolName);
+    console.log(`[TraceAnim] ACTIVATE type=${type} tool=${activeToolName ?? '-'} prevActiveTools=[${activeTools}] totalEntries=${prevEntries.length}`);
+
+    // For execute_tool, allow parallel animations (multiple tools glow simultaneously).
+    // For other types (invoke_agent, chat), fade out previous entries of the same type.
+    // When a chat event arrives, also fade out all tool entries (LLM is thinking again).
+    const updatedEntries = prevEntries
+        .filter(e => entryKey(e.type, e.toolName) !== key) // remove exact duplicate
+        .map(e => {
+            // New chat → fade out all active tools (tools are done, LLM thinking again)
+            if (type === 'chat' && e.type === 'execute_tool' && e.phase === 'active') {
+                const oldKey = entryKey(e.type, e.toolName);
+                if (!fadeOutTimers.has(oldKey)) {
+                    fadeOutTimers.set(oldKey, setTimeout(() => cleanupFadedEntries(oldKey), FADE_OUT_DURATION_MS));
+                }
+                return { ...e, phase: 'fading-out' as const };
+            }
+            if (type !== 'execute_tool' && e.type === type && e.phase === 'active') {
+                // Same non-tool type, different entry → fade out the old one
+                const oldKey = entryKey(e.type, e.toolName);
+                if (!fadeOutTimers.has(oldKey)) {
+                    fadeOutTimers.set(oldKey, setTimeout(() => cleanupFadedEntries(oldKey), FADE_OUT_DURATION_MS));
+                }
+                return { ...e, phase: 'fading-out' as const };
+            }
+            return e;
+        });
+
+    // Add the new active entry
+    updatedEntries.push({ type, toolName: activeToolName, phase: 'active' });
+
+    traceAnimationState = {
+        activeAgentToolNames: toolNames,
+        entries: updatedEntries,
+        // Persist systemInstructions from chat events; tool events inherit it
+        systemInstructions: systemInstructions || traceAnimationState?.systemInstructions,
+    };
+    notifyListeners();
+}
+
+export function setTraceAnimationInactive(
+    type: 'invoke_agent' | 'chat' | 'execute_tool',
+    activeToolName?: string,
+) {
+    if (!traceAnimationState) return;
+
+    const key = entryKey(type, activeToolName);
+    const wasActive = traceAnimationState.entries.some(e => entryKey(e.type, e.toolName) === key && e.phase === 'active');
+    console.log(`[TraceAnim] DEACTIVATE type=${type} tool=${activeToolName ?? '-'} wasActive=${wasActive}`);
+
+    // Mark matching entry as fading-out
+    const updatedEntries = traceAnimationState.entries.map(e => {
+        if (entryKey(e.type, e.toolName) === key && e.phase === 'active') {
+            return { ...e, phase: 'fading-out' as const };
+        }
+        return e;
+    });
+
+    traceAnimationState = { ...traceAnimationState, entries: updatedEntries };
+    notifyListeners();
+
+    // Schedule cleanup
+    if (!fadeOutTimers.has(key)) {
+        fadeOutTimers.set(key, setTimeout(() => cleanupFadedEntries(key), FADE_OUT_DURATION_MS));
+    }
+}
+
+export function useTraceAnimation(): TraceAnimationState {
+    return useSyncExternalStore(subscribeTraceAnimation, getTraceAnimationSnapshot);
 }
