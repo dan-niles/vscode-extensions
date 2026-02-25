@@ -176,15 +176,33 @@ export const Variables = (props: VariablesPageProps) => {
     const dropdownItems = useMemo(() => {
         const excludedDescriptions = ["Configurable", "Parameter", "Listener", "Client"];
 
-        return filteredCompletions.filter(
+        // At root level, apply the standard filter excluding non-variable types
+        if (isAtRoot()) {
+            return filteredCompletions.filter(
+                (completion) =>
+                    (completion.kind === "field" || completion.kind === "variable") &&
+                    completion.label !== "self" &&
+                    !excludedDescriptions.some(desc =>
+                        completion.labelDetails?.description?.includes(desc)
+                    )
+            );
+        }
+
+        // If we're navigating inside an object, show fields and variables
+        const fieldItems = filteredCompletions.filter(
             (completion) =>
                 (completion.kind === "field" || completion.kind === "variable") &&
-                completion.label !== "self" &&
-                !excludedDescriptions.some(desc =>
-                    completion.labelDetails?.description?.includes(desc)
-                )
+                completion.label !== "self"
         );
-    }, [filteredCompletions]);
+
+        // If there are no fields/variables (e.g. a primitive type), fall back to toString()
+        if (fieldItems.length === 0) {
+            const toStringItem = filteredCompletions.find(c => c.label === "toString()");
+            return toStringItem ? [toStringItem] : [];
+        }
+
+        return fieldItems;
+    }, [filteredCompletions, isAtRoot]);
 
     const filteredDropDownItems = useMemo(() => {
         if (!searchValue || searchValue.length === 0) return dropdownItems;
