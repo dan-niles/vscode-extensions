@@ -41,22 +41,7 @@ module.exports = {
           pkg.dependencies['eslint'] = '^9.27.0';
         }
         if (pkg.dependencies['fast-xml-parser']) {
-          pkg.dependencies['fast-xml-parser'] = '5.3.8';
-        }
-        if (pkg.dependencies['minimatch']) {
-          const v = pkg.dependencies['minimatch'];
-          const clean = v.replace(/^[\^~>=<\s]+/, '');
-          const major = parseInt(clean.split('.')[0], 10);
-          if (!isNaN(major)) {
-            if (major >= 10) pkg.dependencies['minimatch'] = '10.2.3';
-            else if (major === 9) pkg.dependencies['minimatch'] = '9.0.7';
-            else if (major === 8) pkg.dependencies['minimatch'] = '8.0.6';
-            else if (major === 7) pkg.dependencies['minimatch'] = '7.4.8';
-            else if (major === 6) pkg.dependencies['minimatch'] = '6.2.2';
-            else if (major === 5) pkg.dependencies['minimatch'] = '5.1.8';
-            else if (major === 4) pkg.dependencies['minimatch'] = '4.2.5';
-            else pkg.dependencies['minimatch'] = '3.1.4';
-          }
+          pkg.dependencies['fast-xml-parser'] = '5.3.6';
         }
         if (pkg.dependencies['lodash']) {
           pkg.dependencies['lodash'] = '4.17.23';
@@ -71,7 +56,7 @@ module.exports = {
           pkg.dependencies['eslint'] = '^9.27.0';
         }
         if (pkg.dependencies['hono']) {
-          pkg.dependencies['hono'] = '^4.12.2';
+          pkg.dependencies['hono'] = '^4.11.7';
         }
         if (pkg.dependencies['lodash']) {
           pkg.dependencies['lodash'] = '4.17.23';
@@ -107,22 +92,7 @@ module.exports = {
           pkg.devDependencies['eslint'] = '^9.27.0';
         }
         if (pkg.devDependencies['fast-xml-parser']) {
-          pkg.devDependencies['fast-xml-parser'] = '5.3.8';
-        }
-        if (pkg.devDependencies['minimatch']) {
-          const v = pkg.dependencies['minimatch'];
-          const clean = v.replace(/^[\^~>=<\s]+/, '');
-          const major = parseInt(clean.split('.')[0], 10);
-          if (!isNaN(major)) {
-            if (major >= 10) pkg.dependencies['minimatch'] = '10.2.3';
-            else if (major === 9) pkg.dependencies['minimatch'] = '9.0.7';
-            else if (major === 8) pkg.dependencies['minimatch'] = '8.0.6';
-            else if (major === 7) pkg.dependencies['minimatch'] = '7.4.8';
-            else if (major === 6) pkg.dependencies['minimatch'] = '6.2.2';
-            else if (major === 5) pkg.dependencies['minimatch'] = '5.1.8';
-            else if (major === 4) pkg.dependencies['minimatch'] = '4.2.5';
-            else pkg.dependencies['minimatch'] = '3.1.4';
-          }
+          pkg.devDependencies['fast-xml-parser'] = '5.3.6';
         }
         if (pkg.devDependencies['lodash']) {
           pkg.devDependencies['lodash'] = '4.17.23';
@@ -137,7 +107,7 @@ module.exports = {
           pkg.devDependencies['eslint'] = '^9.27.0';
         }
         if (pkg.devDependencies['hono']) {
-          pkg.devDependencies['hono'] = '^4.12.2';
+          pkg.devDependencies['hono'] = '^4.11.7';
         }
         if (pkg.devDependencies['lodash']) {
           pkg.devDependencies['lodash'] = '4.17.23';
