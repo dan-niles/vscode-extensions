@@ -27,7 +27,8 @@ import { BallerinaRpcClient } from "@wso2/ballerina-rpc-client";
 export const createConnectionSelectField = (
     value: string,
     config: ConnectionKindConfig,
-    handleActionBtnClick: () => void
+    handleActionBtnClick: () => void,
+    handleEditBtnClick?: (value?: string) => void
 ): FormField => {
     const selectLabel = `Select ${config.displayName}`;
     const description = `Choose an existing ${config.displayName} or create a new one.`;
@@ -55,6 +56,7 @@ export const createConnectionSelectField = (
             "originalName": "connection"
         },
         "actionCallback": handleActionBtnClick,
+        "editCallback": handleEditBtnClick,
         "actionLabel": <><Codicon name="add" />{createLabel}</>,
         "value": value || ""
     };

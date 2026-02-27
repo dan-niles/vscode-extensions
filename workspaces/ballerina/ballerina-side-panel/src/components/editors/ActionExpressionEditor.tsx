@@ -20,6 +20,7 @@ import React from "react";
 import { useFormContext } from "../../context";
 import { ContextAwareExpressionEditorProps, ExpressionEditor } from "./ExpressionEditor";
 import { LinkButton } from "@wso2/ui-toolkit/lib/components/LinkButton/LinkButton";
+import { Button, Icon } from "@wso2/ui-toolkit";
 import styled from "@emotion/styled";
 
 const Row = styled.div`
@@ -38,6 +39,18 @@ const actionButtonStyles = {
 
 export const ActionExpressionEditor = (props: ContextAwareExpressionEditorProps) => {
     const { form, expressionEditor, targetLineRange, fileName } = useFormContext();
+    const currentValue = form.watch(props.field.key);
+    const showEditButton = !!currentValue?.trim() && !!props.field.editCallback;
+
+    const editButton = showEditButton ? (
+        <Button
+            appearance="icon"
+            onClick={() => props.field.editCallback(currentValue)}
+            tooltip="Edit connection"
+        >
+            <Icon name="bi-edit" sx={{ width: 18, height: 18, fontSize: 18 }} />
+        </Button>
+    ) : undefined;
 
     return (
         <>
@@ -48,6 +61,7 @@ export const ActionExpressionEditor = (props: ContextAwareExpressionEditorProps)
                     {...props}
                     {...form}
                     {...expressionEditor}
+                    fieldSuffix={editButton}
                 />
                 <LinkButton onClick={props.field.actionCallback} sx={actionButtonStyles}>{props.field.actionLabel}</LinkButton>
             </Row>

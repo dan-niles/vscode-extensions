@@ -17,7 +17,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlowNode, LineRange } from "@wso2/ballerina-core";
+import { EVENT_TYPE, LineRange, MACHINE_VIEW } from "@wso2/ballerina-core";
 import { FormField, FormValues } from "@wso2/ballerina-side-panel";
 import { useRpcContext } from "@wso2/ballerina-rpc-client";
 import { FormGeneratorNew } from "../../views/BI/Forms/FormGeneratorNew";
@@ -81,7 +81,7 @@ export function ConnectionConfig(props: ConnectionConfigProps): JSX.Element {
     };
 
     const renderFormField = () => {
-        const connectionSelectField = createConnectionSelectField(selectedConnectionValue, config, onCreateNewConnection);
+        const connectionSelectField = createConnectionSelectField(selectedConnectionValue, config, onCreateNewConnection, onEditConnection);
         setSelectedConnectionFields([connectionSelectField]);
     };
 
@@ -94,6 +94,18 @@ export function ConnectionConfig(props: ConnectionConfigProps): JSX.Element {
     const onCreateNewConnection = useCallback(() => {
         onNavigateToSelectionList?.();
     }, [onNavigateToSelectionList]);
+
+    const onEditConnection = useCallback((connectionName?: string) => {
+        if (!connectionName?.trim()) return;
+        rpcClient.getVisualizerRpcClient().openView({
+            type: EVENT_TYPE.OPEN_VIEW,
+            location: {
+                view: MACHINE_VIEW.EditConnectionWizard,
+                identifier: connectionName,
+            },
+            isPopup: true,
+        });
+    }, [rpcClient]);
 
     return (
         <>

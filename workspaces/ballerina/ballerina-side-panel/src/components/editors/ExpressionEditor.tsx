@@ -68,6 +68,7 @@ export type ContextAwareExpressionEditorProps = {
     recordTypeField?: RecordTypeField;
     helperPaneZIndex?: number;
     isInExpandedMode?: boolean;
+    fieldSuffix?: React.ReactNode;
 };
 
 type diagnosticsFetchContext = {
@@ -392,7 +393,8 @@ export const ExpressionEditor = (props: ExpressionEditorProps) => {
         helperPaneZIndex,
         growRange = { start: 1, offset: 9 },
         rawExpression, // original expression
-        sanitizedExpression // sanitized expression that will be rendered in the editor
+        sanitizedExpression, // sanitized expression that will be rendered in the editor
+        fieldSuffix
     } = props as ExpressionEditorProps;
 
     const key = fieldKey ?? field.key;
@@ -698,6 +700,8 @@ export const ExpressionEditor = (props: ExpressionEditorProps) => {
                     render={({ field: { name, value, onChange }, fieldState: { error } }) => {
                         return (
                             <div>
+                                <div style={fieldSuffix ? { display: 'flex', alignItems: 'center', gap: '8px' } : undefined}>
+                                <div style={fieldSuffix ? { flex: 1 } : undefined}>
                                 <ExpressionField
                                     field={field}
                                     inputMode={inputMode}
@@ -773,6 +777,9 @@ export const ExpressionEditor = (props: ExpressionEditorProps) => {
                                     onOpenExpandedMode={onOpenExpandedMode}
                                     isInExpandedMode={isExpandedModalOpen}
                                 />
+                                </div>
+                                {fieldSuffix}
+                                </div>
                                 {error ?
                                     <ErrorBanner errorMsg={error.message.toString()} /> :
                                     formDiagnostics && formDiagnostics.length > 0 &&

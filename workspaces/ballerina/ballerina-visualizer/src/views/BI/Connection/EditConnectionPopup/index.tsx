@@ -108,6 +108,7 @@ export function EditConnectionPopup(props: EditConnectionPopupProps) {
     const [connection, setConnection] = useState<FlowNode>();
     const [filePath, setFilePath] = useState("");
     const [isLoading, setIsLoading] = useState(true);
+    const [connectionError, setConnectionError] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [updatedExpressionField, setUpdatedExpressionField] = useState<ExpressionFormField>(undefined);
     const [persistConnection, setPersistConnection] = useState<PersistConnectionInfo>({
@@ -143,11 +144,7 @@ export function EditConnectionPopup(props: EditConnectionPopupProps) {
 
                 if (!connector) {
                     console.error(">>> Error finding connector", { connectionName });
-                    if (onClose) {
-                        onClose();
-                    } else {
-                        rpcClient.getVisualizerRpcClient()?.goHome();
-                    }
+                    setConnectionError(true);
                     return;
                 }
 
@@ -409,6 +406,30 @@ export function EditConnectionPopup(props: EditConnectionPopupProps) {
                 <PopupContainer>
                     <LoadingContainer>
                         <ProgressRing />
+                    </LoadingContainer>
+                </PopupContainer>
+            </>
+        );
+    }
+
+    if (connectionError) {
+        return (
+            <>
+                <PopupOverlay sx={{ background: `${ThemeColors.SURFACE_CONTAINER}`, opacity: `0.5` }} />
+                <PopupContainer>
+                    <ConfigHeader>
+                        <ConfigTitleContainer>
+                            <PopupTitle variant="h2">Edit Connection</PopupTitle>
+                        </ConfigTitleContainer>
+                        <CloseButton appearance="icon" onClick={handleClosePopup}>
+                            <Codicon name="close" />
+                        </CloseButton>
+                    </ConfigHeader>
+                    <LoadingContainer>
+                        <Icon name="bi-error" sx={{ fontSize: 24, width: 24, height: 24, marginRight: 6 }} />
+                        <Typography variant="body1">
+                            Cannot resolve the connection. It may have been removed or renamed.
+                        </Typography>
                     </LoadingContainer>
                 </PopupContainer>
             </>
