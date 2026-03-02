@@ -204,6 +204,10 @@ export function BIFlowDiagram(props: BIFlowDiagramProps) {
                 // Skip if the parent is a data mapper popup
                 return;
             }
+            if (parent.artifactType === DIRECTORY_MAP.AGENT_TOOL) {
+                // Agent tool creation is handled by AIAgentSidePanel — skip to avoid interfering
+                return;
+            }
             if (
                 parent.artifactType === DIRECTORY_MAP.FUNCTION ||
                 parent.artifactType === DIRECTORY_MAP.NP_FUNCTION ||
