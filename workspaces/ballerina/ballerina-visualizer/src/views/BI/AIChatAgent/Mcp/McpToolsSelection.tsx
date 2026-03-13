@@ -269,6 +269,7 @@ const ScopeKeyButton = styled.button<{ hasScopes?: boolean }>`
     border-radius: 4px;
     position: relative;
     flex-shrink: 0;
+    align-self: center;
     color: ${(props: { hasScopes?: boolean }) => props.hasScopes ? ThemeColors.PRIMARY : ThemeColors.ON_SURFACE_VARIANT};
     &:hover {
         background-color: ${ThemeColors.SURFACE_CONTAINER};
@@ -480,7 +481,7 @@ const ToolsList: React.FC<ToolsListProps> = ({
                                 <ToolItem tool={tool} />
                             </div>
                             {isSelected && onToolScopesChange && (
-                                <Tooltip content={hasScopes ? `Scopes: ${scopes.join(', ')}` : 'Configure scopes'}>
+                                <div style={{ display: "flex", alignSelf: "center" }}>
                                     <ScopeKeyButton
                                         hasScopes={hasScopes}
                                         onClick={(e) => {
@@ -488,11 +489,12 @@ const ToolsList: React.FC<ToolsListProps> = ({
                                             setExpandedScopeTool(isScopeExpanded ? null : tool.name);
                                         }}
                                         aria-label="Configure scopes"
+                                        title={hasScopes ? `Scopes: ${scopes.join(', ')}` : 'Configure scopes'}
                                     >
                                         <Icon name="bi-shield-lock" sx={{ fontSize: 18, width: 18, height: 18 }} />
                                         {hasScopes && <ScopeBadge />}
                                     </ScopeKeyButton>
-                                </Tooltip>
+                                </div>
                             )}
                         </ToolCheckboxItem>
                         {isSelected && isScopeExpanded && onToolScopesChange && (
