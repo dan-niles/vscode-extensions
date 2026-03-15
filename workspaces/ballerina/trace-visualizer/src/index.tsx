@@ -20,6 +20,8 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { TraceVisualizer } from "./TraceVisualizer";
 
+export { TraceVisualizer };
+
 export interface TraceData {
     traceId: string;
     spans: SpanData[];

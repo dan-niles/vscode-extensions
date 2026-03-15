@@ -378,20 +378,41 @@ export class TraceDetailsWebview {
     }
 
     private async exportTraceAsEvalset(traceData: TraceData): Promise<void> {
-        const mode = await this.promptExportMode();
+        await TraceDetailsWebview.exportTraceAsEvalsetStatic(traceData);
+    }
+
+    /**
+     * Exports a single trace as an evalset. Can be called from any context.
+     */
+    public static async exportTraceAsEvalsetStatic(traceData: TraceData): Promise<void> {
+        const mode = await TraceDetailsWebview.promptExportMode();
         if (!mode) { return; }
 
         if (mode === 'new') {
-            await this.createNewEvalsetFromTrace(traceData);
+            await TraceDetailsWebview.createNewEvalsetFromTrace(traceData);
         } else {
-            await this.appendTraceToExistingEvalset(traceData);
+            await TraceDetailsWebview.appendTraceToExistingEvalset(traceData);
+        }
+    }
+
+    /**
+     * Exports session traces as an evalset. Can be called from any context.
+     */
+    public static async exportSessionAsEvalsetStatic(sessionTraces: TraceData[], sessionId: string): Promise<void> {
+        const mode = await TraceDetailsWebview.promptExportMode();
+        if (!mode) { return; }
+
+        if (mode === 'new') {
+            await TraceDetailsWebview.createNewEvalsetFromSession(sessionTraces, sessionId);
+        } else {
+            await TraceDetailsWebview.appendSessionToExistingEvalset(sessionTraces, sessionId);
         }
     }
 
     /**
      * Creates thread from traces
      */
-    private createThreadFromTraces(
+    private static createThreadFromTraces(
         sessionTraces: TraceData[],
         sessionId: string,
         threadName?: string
@@ -409,7 +430,7 @@ export class TraceDetailsWebview {
     /**
      * Creates thread from a single trace
      */
-    private createThreadFromTrace(
+    private static createThreadFromTrace(
         traceData: TraceData,
         threadName?: string
     ): EvalThread {
@@ -426,7 +447,7 @@ export class TraceDetailsWebview {
     /**
      * Prompt for export mode (new vs append)
      */
-    private async promptExportMode(): Promise<'new' | 'append' | undefined> {
+    private static async promptExportMode(): Promise<'new' | 'append' | undefined> {
         const mode = await vscode.window.showQuickPick([
             { label: 'Create new evalset', value: 'new' as const },
             { label: 'Append to existing evalset', value: 'append' as const }
@@ -438,29 +459,26 @@ export class TraceDetailsWebview {
     }
 
     /**
-     * Creates a new evalset
+     * Creates a new evalset from session traces
      */
-    private async createNewEvalset(
+    private static async createNewEvalsetFromSession(
         sessionTraces: TraceData[],
         sessionId: string
     ): Promise<void> {
         try {
-            // 1. Ensure evalsets directory exists
             const evalsetsDir = await ensureEvalsetsDirectory();
-            if (!evalsetsDir) { return; } // User cancelled project selection
+            if (!evalsetsDir) { return; }
 
-            // 2. Prompt for name
             const name = await vscode.window.showInputBox({
                 prompt: 'Enter evalset name',
                 placeHolder: `session-${sessionId.substring(0, 8)}`,
                 value: `session-${sessionId.substring(0, 8)}`,
-                validateInput: (value) => validateEvalsetName(value, evalsetsDir)
+                validateInput: (value: string) => validateEvalsetName(value, evalsetsDir)
             });
 
-            if (!name) { return; } // User cancelled
+            if (!name) { return; }
 
-            // 3. Create EvalSet with single thread
-            const thread = this.createThreadFromTraces(sessionTraces, sessionId);
+            const thread = TraceDetailsWebview.createThreadFromTraces(sessionTraces, sessionId);
             const evalset: EvalSet = {
                 id: crypto.randomUUID(),
                 name: name,
@@ -495,26 +513,23 @@ export class TraceDetailsWebview {
     /**
      * Creates a new evalset from a single trace
      */
-    private async createNewEvalsetFromTrace(
+    private static async createNewEvalsetFromTrace(
         traceData: TraceData
     ): Promise<void> {
         try {
-            // 1. Ensure evalsets directory exists
             const evalsetsDir = await ensureEvalsetsDirectory();
-            if (!evalsetsDir) { return; } // User cancelled project selection
+            if (!evalsetsDir) { return; }
 
-            // 2. Prompt for name
             const name = await vscode.window.showInputBox({
                 prompt: 'Enter evalset name',
                 placeHolder: `trace-${traceData.traceId.substring(0, 8)}`,
                 value: `trace-${traceData.traceId.substring(0, 8)}`,
-                validateInput: (value) => validateEvalsetName(value, evalsetsDir)
+                validateInput: (value: string) => validateEvalsetName(value, evalsetsDir)
             });
 
-            if (!name) { return; } // User cancelled
+            if (!name) { return; }
 
-            // 3. Create EvalSet with single thread
-            const thread = this.createThreadFromTrace(traceData);
+            const thread = TraceDetailsWebview.createThreadFromTrace(traceData);
             const evalset: EvalSet = {
                 id: crypto.randomUUID(),
                 name: name,
@@ -549,7 +564,7 @@ export class TraceDetailsWebview {
     /**
      * Appends a single trace to an existing evalset as a new thread
      */
-    private async appendTraceToExistingEvalset(
+    private static async appendTraceToExistingEvalset(
         traceData: TraceData
     ): Promise<void> {
         try {
@@ -608,7 +623,7 @@ export class TraceDetailsWebview {
             }
 
             // 5. Add new thread
-            const newThread = this.createThreadFromTrace(traceData, threadName);
+            const newThread = TraceDetailsWebview.createThreadFromTrace(traceData, threadName);
             evalset.threads.push(newThread);
 
             // 6. Write back
@@ -632,9 +647,9 @@ export class TraceDetailsWebview {
     }
 
     /**
-     * Appends traces to an existing evalset as a new thread
+     * Appends session traces to an existing evalset as a new thread
      */
-    private async appendToExistingEvalset(
+    private static async appendSessionToExistingEvalset(
         sessionTraces: TraceData[],
         sessionId: string
     ): Promise<void> {
@@ -694,7 +709,7 @@ export class TraceDetailsWebview {
             }
 
             // 5. Add new thread
-            const newThread = this.createThreadFromTraces(sessionTraces, sessionId, threadName);
+            const newThread = TraceDetailsWebview.createThreadFromTraces(sessionTraces, sessionId, threadName);
             evalset.threads.push(newThread);
 
             // 6. Write back
@@ -718,14 +733,7 @@ export class TraceDetailsWebview {
     }
 
     private async exportSessionAsEvalset(sessionTraces: TraceData[], sessionId: string): Promise<void> {
-        const mode = await this.promptExportMode();
-        if (!mode) { return; }
-
-        if (mode === 'new') {
-            await this.createNewEvalset(sessionTraces, sessionId);
-        } else {
-            await this.appendToExistingEvalset(sessionTraces, sessionId);
-        }
+        await TraceDetailsWebview.exportSessionAsEvalsetStatic(sessionTraces, sessionId);
     }
 
     private getWebviewContent(trace: Trace | null, webView: Webview): string {

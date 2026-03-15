@@ -29,7 +29,19 @@ import {
     getChatHistory,
     clearChatHistory,
     getAgentStatus,
-    getSessionInfo
+    getSessionInfo,
+    getTraceDataForViewer,
+    getSessionTracesForViewer,
+    GetTraceDataRequest,
+    GetSessionTracesRequest,
+    exportTraceJson,
+    exportSessionJson,
+    exportTraceAsEvalset,
+    exportSessionAsEvalset,
+    ExportTraceRequest,
+    ExportSessionRequest,
+    ExportTraceAsEvalsetRequest,
+    ExportSessionAsEvalsetRequest,
 } from "@wso2/ballerina-core";
 import { Messenger } from "vscode-messenger";
 import { AgentChatRpcManager } from "./rpc-manager";
@@ -45,4 +57,10 @@ export function registerAgentChatRpcHandlers(messenger: Messenger) {
     messenger.onRequest(clearChatHistory, () => rpcManger.clearChatHistory());
     messenger.onRequest(getAgentStatus, () => rpcManger.getAgentStatus());
     messenger.onRequest(getSessionInfo, () => rpcManger.getSessionInfo());
+    messenger.onRequest(getTraceDataForViewer, (args: GetTraceDataRequest) => rpcManger.getTraceDataForViewer(args));
+    messenger.onRequest(getSessionTracesForViewer, (args: GetSessionTracesRequest) => rpcManger.getSessionTracesForViewer(args));
+    messenger.onNotification(exportTraceJson, (args: ExportTraceRequest) => rpcManger.exportTraceJson(args));
+    messenger.onNotification(exportSessionJson, (args: ExportSessionRequest) => rpcManger.exportSessionJson(args));
+    messenger.onNotification(exportTraceAsEvalset, (args: ExportTraceAsEvalsetRequest) => rpcManger.exportTraceAsEvalset(args));
+    messenger.onNotification(exportSessionAsEvalset, (args: ExportSessionAsEvalsetRequest) => rpcManger.exportSessionAsEvalset(args));
 }

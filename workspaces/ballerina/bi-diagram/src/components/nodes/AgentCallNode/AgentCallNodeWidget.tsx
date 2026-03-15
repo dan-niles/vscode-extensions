@@ -149,7 +149,7 @@ export namespace NodeStyles {
     `;
 
     export const Title = styled(StyledText)`
-        max-width: ${NODE_WIDTH - 80}px;
+        height: 18px !important; 
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -430,6 +430,49 @@ export namespace NodeStyles {
         color: ${ThemeColors.ON_SURFACE};
         opacity: 0.7;
     `;
+
+    export const AgentIdBadge = styled.div`
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        cursor: default;
+        position: relative;
+        overflow: visible;
+        z-index: 10;
+
+        &:hover {
+            opacity: 0.8;
+        }
+    `;
+
+    export const AgentIdTooltip = styled.div`
+        position: absolute;
+        left: 50%;
+        top: calc(100% + 8px);
+        transform: translateX(-50%);
+        padding: 6px 10px;
+        background: ${ThemeColors.SURFACE_DIM};
+        color: ${ThemeColors.ON_SURFACE};
+        border: 1px solid ${ThemeColors.OUTLINE_VARIANT};
+        border-radius: 6px;
+        font-size: 11px;
+        font-family: "GilmerRegular";
+        white-space: nowrap;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+        pointer-events: none;
+        z-index: 1000;
+
+        &::before {
+            content: "";
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 5px solid transparent;
+            border-bottom-color: ${ThemeColors.OUTLINE_VARIANT};
+        }
+    `;
 }
 
 interface AgentCallNodeWidgetProps {
@@ -442,13 +485,14 @@ export interface NodeWidgetProps extends Omit<AgentCallNodeWidgetProps, "childre
 
 export function AgentCallNodeWidget(props: AgentCallNodeWidgetProps) {
     const { model, engine, onClick } = props;
-    const { onNodeSelect, goToSource, onDeleteNode, removeBreakpoint, addBreakpoint, agentNode, readOnly, selectedNodeId } =
+    const { onNodeSelect, goToSource, onDeleteNode, removeBreakpoint, addBreakpoint, agentNode, readOnly, hidePorts, selectedNodeId } =
         useDiagramContext();
     const traceAnimation = useTraceAnimation();
 
     const isSelected = selectedNodeId === model.node.id;
 
     const [isBoxHovered, setIsBoxHovered] = useState(false);
+    const [agentIdHovered, setAgentIdHovered] = useState(false);
     const [anchorEl, setAnchorEl] = useState<HTMLElement | SVGSVGElement>(null);
     const [toolAnchorEl, setToolAnchorEl] = useState<HTMLElement | SVGSVGElement>(null);
     const [selectedTool, setSelectedTool] = useState<ToolData | null>(null);
@@ -623,7 +667,17 @@ export function AgentCallNodeWidget(props: AgentCallNodeWidgetProps) {
         setAiColor(getAIColor());
     };
 
+    const onChatWithAgent = () => {
+        agentNode?.onChatWithAgent?.(model.node);
+        setAnchorEl(null);
+    };
+
     const menuItems: Item[] = [
+        ...(agentNode?.onChatWithAgent ? [{
+            id: "chat",
+            label: "Chat",
+            onClick: () => onChatWithAgent(),
+        }] : []),
         {
             id: "edit",
             label: "Edit",
@@ -680,7 +734,11 @@ export function AgentCallNodeWidget(props: AgentCallNodeWidgetProps) {
             const extractedInstructions = sysInstr.match(/(?:^|\n)#\s*Instructions[ \t]*\r?\n([\s\S]*)$/i)?.[1]?.trim();
 
             const roleMatch = nodeRole != null && extractedRole === nodeRole.trim();
-            const instrMatch = nodeInstructions != null && extractedInstructions === nodeInstructions.trim();
+            const cleanedInstructions = extractedInstructions
+                ?.replace(/\n#\s*Instructions for Tool Validation Failure Handling[^\n]*\n[\s\S]*$/, '')
+                ?.trim();
+            const instrMatch = nodeInstructions != null && cleanedInstructions === nodeInstructions.trim();
+
 
             if (nodeRole != null && nodeInstructions != null) {
                 return roleMatch && instrMatch;
@@ -759,7 +817,7 @@ export function AgentCallNodeWidget(props: AgentCallNodeWidgetProps) {
                         }}
                     />
                 )}
-                <NodeStyles.TopPortWidget port={model.getPort("in")!} engine={engine} />
+                {!hidePorts && <NodeStyles.TopPortWidget port={model.getPort("in")!} engine={engine} />}
                 <NodeStyles.Column style={{ height: `${model.node.viewState?.ch}px` }}>
                     <NodeStyles.Row readOnly={readOnly}>
                         <NodeStyles.Icon onClick={handleOnClick}>
@@ -767,7 +825,23 @@ export function AgentCallNodeWidget(props: AgentCallNodeWidgetProps) {
                         </NodeStyles.Icon>
                         <NodeStyles.Row readOnly={readOnly}>
                             <NodeStyles.Header onClick={handleOnClick}>
-                                <NodeStyles.Title>{nodeTitle}</NodeStyles.Title>
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", lineHeight: 1, maxWidth: `${NODE_WIDTH - 80}px` }}>
+                                    <NodeStyles.Title>{nodeTitle}</NodeStyles.Title>
+                                    <NodeStyles.AgentIdBadge
+                                        title=""
+                                        onMouseEnter={() => setAgentIdHovered(true)}
+                                        onMouseLeave={() => setAgentIdHovered(false)}
+                                    >
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 2.18l7 3.12v4.7c0 4.83-3.13 9.37-7 10.5-3.87-1.13-7-5.67-7-10.5V6.3l7-3.12zM10 15.5l-3.5-3.5 1.41-1.41L10 12.67l5.59-5.59L17 8.5l-7 7z" fill="#0e8a6e" />
+                                        </svg>
+                                        {agentIdHovered && (
+                                            <NodeStyles.AgentIdTooltip>
+                                                Agent ID Enabled
+                                            </NodeStyles.AgentIdTooltip>
+                                        )}
+                                    </NodeStyles.AgentIdBadge>
+                                </div>
                                 <NodeStyles.Description>
                                     {model.node.properties.variable?.value as ReactNode}
                                 </NodeStyles.Description>
@@ -896,7 +970,7 @@ export function AgentCallNodeWidget(props: AgentCallNodeWidgetProps) {
                         </NodeStyles.InstructionsRow>
                     )}
                 </NodeStyles.Column>
-                <NodeStyles.BottomPortWidget port={model.getPort("out")!} engine={engine} />
+                {!hidePorts && <NodeStyles.BottomPortWidget port={model.getPort("out")!} engine={engine} />}
             </NodeStyles.Box>
 
             <svg
@@ -1229,14 +1303,14 @@ export function AgentCallNodeWidget(props: AgentCallNodeWidgetProps) {
                     </Menu>
                 </Popover>
 
-                {/* Add "Add new tool" button below all tools */}
-                <g
+                {/* Add "Add new tool" button below all tools — hidden in read-only mode */}
+                {!readOnly && <g
                     transform={`translate(-11, ${tools.length > 0
                         ? (tools.length + 1) * (NODE_HEIGHT + AGENT_NODE_TOOL_GAP) + AGENT_NODE_TOOL_SECTION_GAP
                         : NODE_HEIGHT + AGENT_NODE_TOOL_SECTION_GAP
                         })`}
                     onClick={onAddToolClick}
-                    style={{ cursor: readOnly ? "default" : "pointer" }}
+                    style={{ cursor: "pointer" }}
                 >
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -1287,7 +1361,7 @@ export function AgentCallNodeWidget(props: AgentCallNodeWidgetProps) {
                             Add New Tool / MCP Server
                         </div>
                     </foreignObject>
-                </g>
+                </g>}
 
                 <defs>
                     <marker

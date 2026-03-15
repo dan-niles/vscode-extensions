@@ -21,7 +21,7 @@ import { NodePosition, STNode } from "@wso2/syntax-tree";
 import { Command } from "./interfaces/ai-panel";
 import { LinePosition } from "./interfaces/common";
 import { ProjectInfo, ProjectMigrationResult, Type } from "./interfaces/extended-lang-client";
-import { CodeData, DIRECTORY_MAP, ProjectStructureArtifactResponse, ProjectStructureResponse } from "./interfaces/bi";
+import { CodeData, DIRECTORY_MAP, FlowNode, ProjectStructureArtifactResponse, ProjectStructureResponse } from "./interfaces/bi";
 import { DiagnosticEntry, DocumentationGeneratorIntermediaryState, SourceFile, CodeContext, FileAttatchment } from "./rpc-types/ai-panel/interfaces";
 
 export type MachineStateValue =
@@ -539,6 +539,24 @@ export const getPopupVisualizerState: RequestType<void, PopupVisualizerLocation>
 
 export const breakpointChanged: NotificationType<boolean> = { method: 'breakpointChanged' };
 export const approvalOverlayState: NotificationType<ApprovalOverlayState> = { method: 'approvalOverlayState' };
+
+// Inline Agent Chat
+export type InlineAgentChatStatus = 'generating' | 'building' | 'ready' | 'error';
+
+export interface InlineAgentChatState {
+    status: InlineAgentChatStatus;
+    agentVarName: string;
+    projectPath?: string;
+    chatEp?: string;
+    sessionId?: string;
+    errorMsg?: string;
+    agentNode?: FlowNode;
+}
+
+export const inlineAgentChatStateChanged: NotificationType<InlineAgentChatState> = { method: 'inlineAgentChatStateChanged' };
+export const getInlineAgentChatState: RequestType<void, InlineAgentChatState | null> = { method: 'getInlineAgentChatState' };
+export const showInlineAgentTerminal: NotificationType<void> = { method: 'showInlineAgentTerminal' };
+export const retryInlineAgentChat: NotificationType<void> = { method: 'retryInlineAgentChat' };
 
 // ------------------> AI Related state types <-----------------------
 export type AIMachineStateValue =

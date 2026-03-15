@@ -49,6 +49,10 @@ import { activateTryItCommand } from './features/tryit/activator';
 import { activate as activateNPFeatures } from './features/natural-programming/activator';
 import { activateAgentChatPanel } from './views/agent-chat/activate';
 import { activateTracing } from './features/tracing';
+import { cleanupStaleAgentChatTerminals } from './rpc-managers/bi-diagram/rpc-manager';
+import * as os from 'os';
+import * as fs from 'fs';
+import * as nodePath from 'path';
 
 let langClient: ExtendedLangClient;
 export let isPluginStartup = true;
@@ -123,6 +127,16 @@ function onBeforeInit(langClient: ExtendedLangClient) {
 
 export async function activate(context: ExtensionContext) {
     extension.context = context;
+
+    // Clean up any stale agent chat temp projects from previous sessions (fire-and-forget, async)
+    fs.promises.readdir(os.tmpdir()).then(entries => {
+        for (const entry of entries) {
+            if (entry.startsWith('bi-agent-chat-')) {
+                fs.promises.rm(nodePath.join(os.tmpdir(), entry), { recursive: true, force: true }).catch(() => {});
+            }
+        }
+    }).catch(() => {});
+
     // Init RPC Layer methods
     RPCLayer.init();
     
@@ -212,6 +226,9 @@ export async function activateBallerina(): Promise<BallerinaExtension> {
 
         // Activate Agent Chat Panel
         activateAgentChatPanel(ballerinaExtInstance);
+
+        // Clean up stale inline agent chat terminals from previous sessions
+        cleanupStaleAgentChatTerminals();
 
         // Activate Tracing Feature
         activateTracing(ballerinaExtInstance);

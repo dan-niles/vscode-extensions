@@ -5,12 +5,13 @@
   "files": [
     "lib"
   ],
-  "main": "lib/TraceVisualizer.js",
-  "types": "lib/TraceVisualizer.d.ts",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
   "scripts": {
     "start": "webpack-dev-server --mode=development --progress",
-    "build": "webpack --config webpack.config.js --mode=production && pnpm run postbuild",
-    "postbuild": "copyfiles -u 1 -V build/*.js build/fonts/* build/images/* -e build/*.txt ../ballerina-extension/resources/jslibs"
+    "build": "tsc && webpack --config webpack.config.js --mode=production && pnpm run postbuild",
+    "postbuild": "copyfiles -u 1 -V build/*.js build/fonts/* build/images/* -e build/*.txt ../ballerina-extension/resources/jslibs",
+    "watch": "tsc --watch"
   },
   "keywords": [],
   "dependencies": {

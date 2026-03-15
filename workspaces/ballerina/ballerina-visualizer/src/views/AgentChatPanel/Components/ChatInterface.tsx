@@ -83,6 +83,7 @@ export const ChatWrapper = styled.div`
     flex-direction: column;
     height: 100vh;
     width: 100%;
+    container-type: inline-size;
 `;
 
 export const ChatContainer = styled.div`
@@ -105,15 +106,15 @@ export const Messages = styled.div`
     padding: 8px 20px;
     height: 100%;
 
-    @media (min-width: 1000px) {
+    @container (min-width: 1000px) {
         padding: 8px 10%;
     }
 
-    @media (min-width: 1600px) {
+    @container (min-width: 1600px) {
         padding: 8px 15%;
     }
 
-    @media (min-width: 2000px) {
+    @container (min-width: 2000px) {
         padding: 8px 20%;
     }
 `;
@@ -367,7 +368,7 @@ interface ClearChatWarningPopupProps {
 
 const ClearChatWarningPopup: React.FC<ClearChatWarningPopupProps> = ({ isOpen, onContinue, onCancel }) => {
     return (
-        <Modal isOpen={isOpen} onClose={onCancel} maxWidth='60%'>
+        <Modal isOpen={isOpen} onClose={onCancel} maxWidth='450px'>
             <p>Are you sure you want to clear the chat? This will remove all messages and cannot be undone.</p>
             <ButtonContainer>
                 <Button
@@ -398,7 +399,14 @@ export function preprocessLatex(text: string): string {
     return processed;
 }
 
-const ChatInterface: React.FC = () => {
+interface ChatInterfaceProps {
+    /** When provided, trace view requests are handled by this callback instead of opening a new tab */
+    onShowTrace?: (traceId: string, focusSpanId?: string) => void;
+    /** When provided, session overview requests are handled by this callback instead of opening a new tab */
+    onShowSessionOverview?: () => void;
+}
+
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ onShowTrace, onShowSessionOverview }) => {
     const { rpcClient } = useRpcContext();
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -558,7 +566,6 @@ const ChatInterface: React.FC = () => {
 
     const handleShowLogs = async (messageIndex: number) => {
         try {
-            // Get the trace ID from the agent's response message
             const message = messages[messageIndex];
 
             if (!message || message.isUser || !message.traceId) {
@@ -566,9 +573,13 @@ const ChatInterface: React.FC = () => {
                 return;
             }
 
-            await rpcClient.getAgentChatRpcClient().showTraceView({
-                traceId: message.traceId
-            });
+            if (onShowTrace) {
+                onShowTrace(message.traceId);
+            } else {
+                await rpcClient.getAgentChatRpcClient().showTraceView({
+                    traceId: message.traceId
+                });
+            }
         } catch (error) {
             console.error('Failed to show trace view:', error);
         }
@@ -602,10 +613,14 @@ const ChatInterface: React.FC = () => {
 
     const handleViewInTrace = async (traceId: string, spanId: string) => {
         try {
-            await rpcClient.getAgentChatRpcClient().showTraceView({
-                traceId,
-                focusSpanId: spanId
-            });
+            if (onShowTrace) {
+                onShowTrace(traceId, spanId);
+            } else {
+                await rpcClient.getAgentChatRpcClient().showTraceView({
+                    traceId,
+                    focusSpanId: spanId
+                });
+            }
         } catch (error) {
             console.error('Failed to show trace view:', error);
         }
@@ -613,7 +628,11 @@ const ChatInterface: React.FC = () => {
 
     const handleShowSessionLogs = async () => {
         try {
-            await rpcClient.getAgentChatRpcClient().showSessionOverview({});
+            if (onShowSessionOverview) {
+                onShowSessionOverview();
+            } else {
+                await rpcClient.getAgentChatRpcClient().showSessionOverview({});
+            }
         } catch (error) {
             console.error('Failed to show session overview:', error);
         }

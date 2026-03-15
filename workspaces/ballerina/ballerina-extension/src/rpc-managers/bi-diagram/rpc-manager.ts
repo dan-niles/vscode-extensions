@@ -20,6 +20,7 @@
 import {
     AIChatRequest,
     AddFieldRequest,
+    InlineAgentChatRequest,
     AddFunctionRequest,
     AddImportItemResponse,
     AddProjectToWorkspaceRequest,
@@ -190,7 +191,8 @@ import {
     createEmptyBIWorkspace,
     deleteProjectFromWorkspace,
     openInVSCode
-, validateProjectPath } from "../../utils/bi";
+    , validateProjectPath
+} from "../../utils/bi";
 import { writeBallerinaFileDidOpen } from "../../utils/modification";
 import { updateSourceCode } from "../../utils/source-utils";
 import { getView } from "../../utils/state-machine-utils";
@@ -205,7 +207,204 @@ import { registerFormOpen, registerFormClose } from "./form-state";
 import { chatStateStorage } from "../../views/ai-panel/chatStateStorage";
 import { getRepoRoot } from "../platform-ext/platform-utils";
 import { WI_EXTENSION_ID } from "../../utils";
+import { TracerMachine } from "../../features/tracing";
+import { v4 as uuidv4 } from "uuid";
+import * as net from "net";
+import { InlineAgentChatPanel } from "../../views/inline-agent-chat/webview";
+import { RPCLayer } from "../../RPCLayer";
+import { inlineAgentChatStateChanged, InlineAgentChatState } from "@wso2/ballerina-core";
 
+// Track running inline agent chat sessions for cleanup
+const inlineAgentChatSessions = new Map<string, {
+    terminal: vscode.Terminal;
+    tempPath: string;
+    port: number;
+}>();
+
+let latestInlineAgentChatState: InlineAgentChatState | null = null;
+let lastInlineAgentChatRequest: InlineAgentChatRequest | null = null;
+
+function sendInlineAgentChatState(state: InlineAgentChatState) {
+    latestInlineAgentChatState = state;
+    RPCLayer._messenger.sendNotification(
+        inlineAgentChatStateChanged,
+        { type: 'webview', webviewType: InlineAgentChatPanel.viewType },
+        state
+    );
+}
+
+export function getLatestInlineAgentChatState(): InlineAgentChatState | null {
+    return latestInlineAgentChatState;
+}
+
+export function retryLastInlineAgentChat(): void {
+    if (!lastInlineAgentChatRequest) {
+        return;
+    }
+    getRpcManagerInstance().startInlineAgentChat(lastInlineAgentChatRequest);
+}
+
+export function showCurrentInlineAgentTerminal(): void {
+    for (const [, session] of inlineAgentChatSessions) {
+        session.terminal.show(true); // preserveFocus — don't steal focus from the chat view
+        return;
+    }
+}
+
+function getAvailablePort(): Promise<number> {
+    return new Promise((resolve, reject) => {
+        const server = net.createServer();
+        server.unref();
+        server.on('error', reject);
+        server.listen(0, '127.0.0.1', () => {
+            const address = server.address();
+            if (address && typeof address !== 'string') {
+                const port = address.port;
+                // Keep the server open until we actually need the port — close right before spawning
+                // This prevents other processes from grabbing it in the meantime
+                server.close(() => resolve(port));
+            } else {
+                server.close(() => reject(new Error('Failed to get available port')));
+            }
+        });
+    });
+}
+
+function waitForPortReady(port: number, terminal?: vscode.Terminal, timeoutMs = 120000, intervalMs = 1000): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const startTime = Date.now();
+        let settled = false;
+
+        // If a terminal is provided, detect early exit (compilation failure, etc.)
+        const disposables: vscode.Disposable[] = [];
+        if (terminal) {
+            if (window.onDidEndTerminalShellExecution) {
+                disposables.push(window.onDidEndTerminalShellExecution((e) => {
+                    if (e.terminal === terminal && !settled) {
+                        const code = e.exitCode;
+                        if (code !== undefined && code !== 0) {
+                            settled = true;
+                            disposables.forEach(d => d.dispose());
+                            reject(new Error('Agent failed to start.'));
+                        }
+                    }
+                }));
+            }
+            disposables.push(window.onDidCloseTerminal((t) => {
+                if (t === terminal && !settled) {
+                    settled = true;
+                    disposables.forEach(d => d.dispose());
+                    reject(new Error('Agent failed to start. Terminal was closed.'));
+                }
+            }));
+        }
+
+        // Port polling — try connecting every intervalMs until success or timeout
+        const check = () => {
+            if (settled) { return; }
+
+            if (Date.now() - startTime > timeoutMs) {
+                settled = true;
+                disposables.forEach(d => d.dispose());
+                reject(new Error('Timed out waiting for agent to start'));
+                return;
+            }
+
+            const socket = new net.Socket();
+            socket.setTimeout(500);
+
+            socket.on('connect', () => {
+                socket.destroy();
+                if (!settled) {
+                    settled = true;
+                    disposables.forEach(d => d.dispose());
+                    resolve();
+                }
+            });
+
+            socket.on('timeout', () => {
+                socket.destroy();
+                if (!settled) { setTimeout(check, intervalMs); }
+            });
+
+            socket.on('error', () => {
+                socket.destroy();
+                if (!settled) { setTimeout(check, intervalMs); }
+            });
+
+            socket.connect(port, '127.0.0.1');
+        };
+
+        check();
+    });
+}
+
+/**
+ * Extracts error lines from raw terminal output.
+ * Strips ANSI escape codes and returns only lines starting with "error:" or "ERROR".
+ */
+function cleanTerminalOutput(rawChunks: string[]): string {
+    const raw = rawChunks.join('');
+
+    // Strip ANSI/OSC/CSI escape sequences
+    const stripped = raw
+        .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
+        .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+        .replace(/\x1b[^[\]]/g, '')
+        .replace(/[\x00-\x09\x0b-\x1f]/g, '');
+
+    // Extract only error lines
+    const errorLines = stripped
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => /^(error:|ERROR\s)/.test(l));
+
+    return errorLines.join('\n');
+}
+
+// Lazily-created singleton for use by module-level helpers (e.g. retry).
+// startInlineAgentChat is stateless on the instance, so sharing is safe.
+let _rpcManagerInstance: BiDiagramRpcManager | undefined;
+function getRpcManagerInstance(): BiDiagramRpcManager {
+    if (!_rpcManagerInstance) {
+        _rpcManagerInstance = new BiDiagramRpcManager();
+    }
+    return _rpcManagerInstance;
+}
+
+function killSession(session: { terminal: vscode.Terminal; tempPath: string }) {
+    try {
+        session.terminal.dispose();
+    } catch (e) { /* ignore */ }
+    try {
+        fs.rmSync(session.tempPath, { recursive: true, force: true });
+    } catch (e) { /* ignore */ }
+}
+
+export function disposeInlineAgentChats(): void {
+    for (const [name, session] of inlineAgentChatSessions) {
+        try {
+            killSession(session);
+        } catch (e) {
+            console.error(`[inline-agent-chat] cleanup error for ${name}:`, e);
+        }
+    }
+    inlineAgentChatSessions.clear();
+}
+
+/**
+ * Cleans up stale "Agent Chat:" terminals that survived a window reload.
+ * Should be called on extension activation.
+ */
+export function cleanupStaleAgentChatTerminals(): void {
+    const staleTerminals = window.terminals.filter(
+        (t) => t.name.startsWith('Agent Chat:')
+    );
+    for (const terminal of staleTerminals) {
+        console.log(`[inline-agent-chat] Disposing stale terminal: ${terminal.name}`);
+        terminal.dispose();
+    }
+}
 
 export class BiDiagramRpcManager implements BIDiagramAPI {
     OpenConfigTomlRequest: (params: OpenConfigTomlRequest) => Promise<void>;
@@ -1156,8 +1355,8 @@ export class BiDiagramRpcManager implements BIDiagramAPI {
         }
 
         const deploymentParams: ICreateNewIntegrationCmdParams = {
-            buildPackLang:"ballerina",
-            integrations:[{ fsPath: StateMachine.context().projectPath, supportedIntegrationTypes: [integrationType] }],
+            buildPackLang: "ballerina",
+            integrations: [{ fsPath: StateMachine.context().projectPath, supportedIntegrationTypes: [integrationType] }],
             workspaceDir: StateMachine.context().workspacePath || StateMachine.context().projectPath,
         };
         await commands.executeCommand(WICommandIds.CreateNewComponent, deploymentParams);
@@ -1171,7 +1370,7 @@ export class BiDiagramRpcManager implements BIDiagramAPI {
             window.showWarningMessage("No deployable projects found in the workspace.");
             return { isCompleted: true };
         }
-        const deploymentParams: ICreateNewIntegrationCmdIntegrations[]= [];
+        const deploymentParams: ICreateNewIntegrationCmdIntegrations[] = [];
 
         // If there is only one project in the workspace and it has multiple integration types,
         // ask the user to pick the type similar to the single project deploy flow.
@@ -1184,7 +1383,7 @@ export class BiDiagramRpcManager implements BIDiagramAPI {
                 return { isCompleted: true };
             }
 
-            deploymentParams.push({fsPath: projectPath, supportedIntegrationTypes: [integrationType] });
+            deploymentParams.push({ fsPath: projectPath, supportedIntegrationTypes: [integrationType] });
         } else {
             for (const projectScope of projectScopes) {
                 const { projectPath, integrationTypes } = projectScope;
@@ -1193,7 +1392,7 @@ export class BiDiagramRpcManager implements BIDiagramAPI {
                     continue;
                 }
 
-                deploymentParams.push({fsPath: projectPath, supportedIntegrationTypes: integrationTypes });
+                deploymentParams.push({ fsPath: projectPath, supportedIntegrationTypes: integrationTypes });
             }
         }
 
@@ -1240,6 +1439,184 @@ export class BiDiagramRpcManager implements BIDiagramAPI {
             });
         } else {
             openAIPanelWithPrompt(undefined);
+        }
+    }
+
+    async startInlineAgentChat(params: InlineAgentChatRequest): Promise<void> {
+        lastInlineAgentChatRequest = params;
+        // Declared outside try so catch block can access captured terminal output
+        const capturedOutput: string[] = [];
+        try {
+            // Clean up existing session for the same agent if any
+            const existing = inlineAgentChatSessions.get(params.agentVarName);
+            if (existing) {
+                killSession(existing);
+                inlineAgentChatSessions.delete(params.agentVarName);
+            }
+
+            // 1. Open the webview panel immediately (shows loading state)
+            const cleanupSession = () => {
+                const session = inlineAgentChatSessions.get(params.agentVarName);
+                if (session) {
+                    killSession(session);
+                    inlineAgentChatSessions.delete(params.agentVarName);
+                }
+            };
+            InlineAgentChatPanel.render(params.agentVarName, cleanupSession);
+
+            // Keep agentNode to include in all state notifications
+            const agentNode = params.agentNode;
+
+            // 2. Push "generating" state with agent node for the left panel
+            sendInlineAgentChatState({
+                status: 'generating',
+                agentVarName: params.agentVarName,
+                agentNode,
+            });
+
+            // 3. Find available port
+            const port = await getAvailablePort();
+
+            // 4. Call LS to generate temp project
+            const result = await StateMachine.langClient().sendRequest(
+                "agentManager/generateAgentChatProject",
+                {
+                    filePath: params.filePath,
+                    agentVariableName: params.agentVarName,
+                    port
+                }
+            );
+
+            if ((result as any).errorMsg) {
+                sendInlineAgentChatState({
+                    status: 'error',
+                    agentVarName: params.agentVarName,
+                    agentNode,
+                    errorMsg: (result as any).errorMsg,
+                });
+                return;
+            }
+
+            const projectPath = (result as any).projectPath as string;
+            console.log(`[inline-agent-chat] Starting agent chat on port ${port}, project: ${projectPath}`);
+
+            // 5. Push "building" state
+            sendInlineAgentChatState({
+                status: 'building',
+                agentVarName: params.agentVarName,
+                agentNode,
+                projectPath,
+            });
+
+            // 6. Start trace server if tracing is enabled
+            const traceEnabledFile = path.join(projectPath, 'trace_enabled.bal');
+            if (fs.existsSync(traceEnabledFile)) {
+                TracerMachine.startServer();
+            }
+
+            // 7. Run in a VS Code terminal — same pattern as "Run Project" (cmd-runner.ts).
+            //    Terminal processes die automatically when VS Code closes/reloads.
+            const sourceProjectRoot = path.dirname(params.filePath);
+            const sourceConfigPath = path.join(sourceProjectRoot, 'Config.toml');
+            const env: Record<string, string> = {};
+            if (fs.existsSync(sourceConfigPath)) {
+                env['BAL_CONFIG_FILES'] = sourceConfigPath;
+            }
+            // Set up output capture BEFORE creating the terminal.
+            // Shell integration requires a real shell (bash/zsh) — NOT shellPath:'bal'.
+            // With a real shell, onDidStartTerminalShellExecution fires for `bal run`
+            // and execution.read() gives us the output stream.
+            const terminalName = `Agent Chat: ${params.agentVarName}`;
+            const startListener = window.onDidStartTerminalShellExecution?.((e) => {
+                if (e.terminal.name !== terminalName) { return; }
+                (async () => {
+                    try {
+                        for await (const data of e.execution.read()) {
+                            capturedOutput.push(data);
+                            if (capturedOutput.length > 500) {
+                                capturedOutput.splice(0, capturedOutput.length - 500);
+                            }
+                        }
+                    } catch (err) {
+                        // Stream ended — fine
+                    }
+                })();
+            });
+
+            // Use a normal shell terminal (not shellPath:'bal') so that:
+            // 1. Shell integration works → we can capture output
+            // 2. When bal run fails, the shell stays alive → terminal stays open with errors visible
+            const terminal = window.createTerminal({
+                name: terminalName,
+                cwd: projectPath,
+                env,
+                isTransient: true,
+            });
+            terminal.sendText('bal run', true);
+
+            // Track the session
+            inlineAgentChatSessions.set(params.agentVarName, {
+                terminal,
+                tempPath: projectPath,
+                port,
+            });
+
+            // Monitor for process exit — push error with captured output
+            let portReady = false;
+
+            if (window.onDidEndTerminalShellExecution) {
+                window.onDidEndTerminalShellExecution((e) => {
+                    if (e.terminal !== terminal) { return; }
+                    if (e.exitCode !== undefined && e.exitCode !== 0) {
+                        startListener?.dispose();
+                        // Wait briefly for output capture to flush
+                        setTimeout(() => {
+                            const output = cleanTerminalOutput(capturedOutput);
+                            if (portReady) {
+                                // Crashed after becoming ready
+                                sendInlineAgentChatState({
+                                    status: 'error',
+                                    agentVarName: params.agentVarName,
+                                    agentNode,
+                                    errorMsg: output || 'Agent process exited unexpectedly.',
+                                });
+                                inlineAgentChatSessions.delete(params.agentVarName);
+                            }
+                            // If !portReady, waitForPortReady will reject and the catch block handles it
+                        }, 500);
+                    }
+                });
+            }
+
+            // 8. Poll the port until the service is ready
+            await waitForPortReady(port, terminal);
+            portReady = true;
+
+            // 9. Set agent chat context for the chat RPC manager
+            const chatEp = `http://localhost:${port}/AgentChat/chat`;
+            const sessionId = uuidv4();
+            extension.agentChatContext = { chatEp, chatSessionId: sessionId };
+
+            // 10. Push "ready" state — webview activates the chat interface
+            sendInlineAgentChatState({
+                status: 'ready',
+                agentVarName: params.agentVarName,
+                agentNode,
+                projectPath,
+                chatEp,
+                sessionId,
+            });
+
+            console.log(`[inline-agent-chat] Agent ready for ${params.agentVarName} at ${chatEp}`);
+
+        } catch (error) {
+            // Use captured terminal output as the error message if available
+            const output = cleanTerminalOutput(capturedOutput);
+            sendInlineAgentChatState({
+                status: 'error',
+                agentVarName: params.agentVarName,
+                errorMsg: output || `${error}`,
+            });
         }
     }
 

@@ -36,7 +36,21 @@ import {
     clearChatHistory,
     getAgentStatus,
     getSessionInfo,
-    SessionInfoResponse
+    SessionInfoResponse,
+    GetTraceDataRequest,
+    GetTraceDataResponse,
+    GetSessionTracesRequest,
+    GetSessionTracesResponse,
+    getTraceDataForViewer,
+    getSessionTracesForViewer,
+    ExportTraceRequest,
+    ExportSessionRequest,
+    ExportTraceAsEvalsetRequest,
+    ExportSessionAsEvalsetRequest,
+    exportTraceJson,
+    exportSessionJson,
+    exportTraceAsEvalset,
+    exportSessionAsEvalset,
 } from "@wso2/ballerina-core";
 import { HOST_EXTENSION } from "vscode-messenger-common";
 import { Messenger } from "vscode-messenger-webview";
@@ -82,5 +96,29 @@ export class AgentChatRpcClient implements AgentChatAPI {
 
     getSessionInfo(): Promise<SessionInfoResponse> {
         return this._messenger.sendRequest(getSessionInfo, HOST_EXTENSION);
+    }
+
+    getTraceDataForViewer(params: GetTraceDataRequest): Promise<GetTraceDataResponse> {
+        return this._messenger.sendRequest(getTraceDataForViewer, HOST_EXTENSION, params);
+    }
+
+    getSessionTracesForViewer(params: GetSessionTracesRequest): Promise<GetSessionTracesResponse> {
+        return this._messenger.sendRequest(getSessionTracesForViewer, HOST_EXTENSION, params);
+    }
+
+    exportTraceJson(params: ExportTraceRequest): void {
+        this._messenger.sendNotification(exportTraceJson, HOST_EXTENSION, params);
+    }
+
+    exportSessionJson(params: ExportSessionRequest): void {
+        this._messenger.sendNotification(exportSessionJson, HOST_EXTENSION, params);
+    }
+
+    exportTraceAsEvalset(params: ExportTraceAsEvalsetRequest): void {
+        this._messenger.sendNotification(exportTraceAsEvalset, HOST_EXTENSION, params);
+    }
+
+    exportSessionAsEvalset(params: ExportSessionAsEvalsetRequest): void {
+        this._messenger.sendNotification(exportSessionAsEvalset, HOST_EXTENSION, params);
     }
 }

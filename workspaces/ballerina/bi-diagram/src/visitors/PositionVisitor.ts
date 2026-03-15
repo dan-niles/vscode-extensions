@@ -144,8 +144,13 @@ export class PositionVisitor implements BaseVisitor {
         this.lastNodeY += node.viewState.h + NODE_GAP_Y;
 
         if (!node.viewState.x) {
-            const centerX = getTopNodeCenter(node, parent, this.diagramCenterX);
-            node.viewState.x = centerX - node.viewState.lw;
+            if (parent) {
+                const centerX = getTopNodeCenter(node, parent, this.diagramCenterX);
+                node.viewState.x = centerX - node.viewState.lw;
+            } else {
+                // No parent: center the full node width (box + tools) visually
+                node.viewState.x = this.diagramCenterX - (node.viewState.lw + node.viewState.rw) / 2;
+            }
         }
     }
 

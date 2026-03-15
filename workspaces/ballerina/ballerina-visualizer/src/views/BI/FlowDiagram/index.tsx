@@ -2322,6 +2322,19 @@ export function BIFlowDiagram(props: BIFlowDiagramProps) {
         // TODO: implement the edit agent logic
     };
 
+    const handleOnChatWithAgent = (agentCallNode: FlowNode) => {
+        const agentVarName = agentCallNode.properties?.connection?.value as string;
+        if (!agentVarName || !model?.fileName) {
+            console.error('Cannot start inline agent chat: missing agent variable name or file path');
+            return;
+        }
+        rpcClient.getBIDiagramRpcClient().startInlineAgentChat({
+            agentVarName,
+            filePath: model.fileName,
+            agentNode: agentCallNode,
+        });
+    };
+
     // AI Agent callback handlers
     const handleOnEditAgentModel = async (agentCallNode: FlowNode) => {
         const agentNode = await findAgentNodeFromAgentCallNode(agentCallNode, rpcClient);
@@ -2726,6 +2739,7 @@ export function BIFlowDiagram(props: BIFlowDiagramProps) {
                 goToTool: handleOnGoToTool,
                 onSelectMemoryManager: handleOnSelectMemoryManager,
                 onDeleteMemoryManager: handleOnDeleteMemoryManager,
+                onChatWithAgent: handleOnChatWithAgent,
             },
             suggestions: {
                 fetching: fetchingAiSuggestions,

@@ -64,7 +64,12 @@ import {
     approvalOverlayState,
     ApprovalOverlayState,
     traceAnimationChanged,
-    TraceAnimationEvent
+    TraceAnimationEvent,
+    inlineAgentChatStateChanged,
+    InlineAgentChatState,
+    showInlineAgentTerminal,
+    getInlineAgentChatState,
+    retryInlineAgentChat
 } from "@wso2/ballerina-core";
 import { LangClientRpcClient } from "./rpc-clients/lang-client/rpc-client";
 import { LibraryBrowserRpcClient } from "./rpc-clients/library-browser/rpc-client";
@@ -225,6 +230,22 @@ export class BallerinaRpcClient {
 
     onProjectContentUpdated(callback: (state: boolean) => void) {
         this.messenger.onNotification(projectContentUpdated, callback);
+    }
+
+    onInlineAgentChatStateChanged(callback: (state: InlineAgentChatState) => void) {
+        this.messenger.onNotification(inlineAgentChatStateChanged, callback);
+    }
+
+    showInlineAgentTerminal() {
+        this.messenger.sendNotification(showInlineAgentTerminal, HOST_EXTENSION);
+    }
+
+    retryInlineAgentChat() {
+        this.messenger.sendNotification(retryInlineAgentChat, HOST_EXTENSION);
+    }
+
+    getInlineAgentChatState(): Promise<InlineAgentChatState | null> {
+        return this.messenger.sendRequest(getInlineAgentChatState, HOST_EXTENSION);
     }
 
     // <----- This is used to register given artifact updated callback notification ----->

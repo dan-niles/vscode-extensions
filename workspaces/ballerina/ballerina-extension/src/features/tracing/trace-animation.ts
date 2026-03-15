@@ -19,6 +19,7 @@
 import { TraceAnimationEvent, traceAnimationChanged } from '@wso2/ballerina-core';
 import { RPCLayer } from '../../RPCLayer';
 import { VisualizerWebview } from '../../views/visualizer/webview';
+import { InlineAgentChatPanel } from '../../views/inline-agent-chat/webview';
 import { Span, TraceServer } from './trace-server';
 
 const FADE_OUT_DELAY_MS = 3000;
@@ -169,6 +170,12 @@ function sendAnimationEvent(event: TraceAnimationEvent) {
         RPCLayer._messenger.sendNotification(
             traceAnimationChanged,
             { type: 'webview', webviewType: VisualizerWebview.viewType },
+            event
+        );
+        // Also send to the inline agent chat panel if it's open
+        RPCLayer._messenger.sendNotification(
+            traceAnimationChanged,
+            { type: 'webview', webviewType: InlineAgentChatPanel.viewType },
             event
         );
     } catch (err) {

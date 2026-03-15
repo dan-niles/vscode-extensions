@@ -20,6 +20,7 @@
 import {
     AIChatRequest,
     AddFieldRequest,
+    InlineAgentChatRequest,
     AddFunctionRequest,
     AddImportItemResponse,
     AddProjectToWorkspaceRequest,
@@ -196,6 +197,7 @@ import {
     handleReadmeContent,
     openAIChat,
     openConfigToml,
+    startInlineAgentChat,
     openReadme,
     removeBreakpointFromSource,
     renameIdentifier,
@@ -377,6 +379,10 @@ export class BiDiagramRpcClient implements BIDiagramAPI {
 
     openAIChat(params: AIChatRequest): void {
         return this._messenger.sendNotification(openAIChat, HOST_EXTENSION, params);
+    }
+
+    startInlineAgentChat(params: InlineAgentChatRequest): void {
+        return this._messenger.sendNotification(startInlineAgentChat, HOST_EXTENSION, params);
     }
 
     getSignatureHelp(params: SignatureHelpRequest): Promise<SignatureHelpResponse> {

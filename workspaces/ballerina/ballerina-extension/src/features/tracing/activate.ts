@@ -34,6 +34,7 @@ export const DISABLE_TRACING_COMMAND = 'ballerina.disableTracing';
 export const CLEAR_TRACES_COMMAND = 'ballerina.clearTraces';
 export const SHOW_TRACE_DETAILS_COMMAND = 'ballerina.showTraceDetails';
 export const TOGGLE_AGENT_FILTER_COMMAND = 'ballerina.toggleAgentFilter';
+export const START_TRACE_SERVER_COMMAND = 'ballerina.startTraceServer';
 export const TRACE_VIEW_ID = 'ballerina-traceView';
 
 let treeDataProvider: TraceTreeDataProvider | undefined;
@@ -85,8 +86,7 @@ export function activateTracing(ballerinaExtInstance: BallerinaExtension) {
         }
 
         TracerMachine.enable(targetPath);
-        // Reveal/focus the ballerina-traceView (shows trace panel in panel)
-        vscode.commands.executeCommand('workbench.view.extension.ballerina-traceView');
+        vscode.window.showInformationMessage('Tracing enabled.');
     });
 
     const disableTracingCommand = vscode.commands.registerCommand(DISABLE_TRACING_COMMAND, async () => {
@@ -95,6 +95,7 @@ export function activateTracing(ballerinaExtInstance: BallerinaExtension) {
             return;
         }
         TracerMachine.disable(targetPath);
+        vscode.window.showInformationMessage('Tracing disabled.');
     });
 
     const clearTracesCommand = vscode.commands.registerCommand(CLEAR_TRACES_COMMAND, () => {
@@ -125,6 +126,19 @@ export function activateTracing(ballerinaExtInstance: BallerinaExtension) {
         }
     );
 
+    const startTraceServerCommand = vscode.commands.registerCommand(START_TRACE_SERVER_COMMAND, () => {
+        if (TracerMachine.isServerStarted()) {
+            vscode.window.showInformationMessage('Trace server is already running.');
+            return;
+        }
+        if (!TracerMachine.isEnabled()) {
+            vscode.window.showInformationMessage('Enable tracing first before starting the trace server.');
+            return;
+        }
+        TracerMachine.startServer();
+        vscode.window.showInformationMessage('Trace server started.');
+    });
+
     // Add all subscriptions
     ballerinaExtInstance.context.subscriptions.push(
         treeView,
@@ -134,6 +148,7 @@ export function activateTracing(ballerinaExtInstance: BallerinaExtension) {
         clearTracesCommand,
         showTraceDetailsCommand,
         toggleAgentFilterCommand,
+        startTraceServerCommand,
         treeDataProvider
     );
 }

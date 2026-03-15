@@ -32,24 +32,28 @@ declare global {
 
 interface TraceVisualizerProps {
     initialTraceData?: TraceData;
+    initialSessionTraces?: TraceData[];
     isAgentChat: boolean;
     focusSpanId?: string;
     sessionId?: string;
     showSidebar?: boolean;
+    onRequestSessionTraces?: (sessionId: string) => void;
 }
 
 type ViewMode = 'overview' | 'details';
 
 export function TraceVisualizer({
     initialTraceData,
+    initialSessionTraces,
     isAgentChat,
     focusSpanId,
     sessionId,
+    onRequestSessionTraces,
     showSidebar
 }: TraceVisualizerProps) {
     const [viewMode, setViewMode] = useState<ViewMode>(initialTraceData ? 'details' : 'overview');
     const [currentTraceData, setCurrentTraceData] = useState<TraceData | undefined>(initialTraceData);
-    const [sessionTraces, setSessionTraces] = useState<TraceData[]>([]);
+    const [sessionTraces, setSessionTraces] = useState<TraceData[]>(initialSessionTraces ?? []);
     const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(sessionId);
     const [currentFocusSpanId, setCurrentFocusSpanId] = useState<string | undefined>(focusSpanId);
 
@@ -100,6 +104,12 @@ export function TraceVisualizer({
     }, []);
 
     const handleViewSession = () => {
+        // If we already have session traces loaded, just switch back to overview
+        if (sessionTraces.length > 0 && currentSessionId) {
+            setViewMode('overview');
+            return;
+        }
+
         if (!currentTraceData) return;
 
         // Extract session ID from the current trace
@@ -113,8 +123,9 @@ export function TraceVisualizer({
         }
 
         if (extractedSessionId) {
-            // Request session traces from extension
-            if (window.vscode) {
+            if (onRequestSessionTraces) {
+                onRequestSessionTraces(extractedSessionId);
+            } else if (window.vscode) {
                 window.vscode.postMessage({
                     command: 'requestSessionTraces',
                     sessionId: extractedSessionId

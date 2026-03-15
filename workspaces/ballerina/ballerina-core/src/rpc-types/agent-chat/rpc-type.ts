@@ -17,7 +17,7 @@
  * 
  * THIS FILE INCLUDES AUTO GENERATED CODE
  */
-import { ChatReqMessage, ChatRespMessage, TraceInput, TraceStatus, ChatHistoryResponse, AgentStatusResponse, ClearChatResponse, SessionInput, SessionInfoResponse } from "./interfaces";
+import { ChatReqMessage, ChatRespMessage, TraceInput, TraceStatus, ChatHistoryResponse, AgentStatusResponse, ClearChatResponse, SessionInput, SessionInfoResponse, GetTraceDataRequest, GetTraceDataResponse, GetSessionTracesRequest, GetSessionTracesResponse, ExportTraceRequest, ExportSessionRequest, ExportTraceAsEvalsetRequest, ExportSessionAsEvalsetRequest } from "./interfaces";
 import { RequestType, NotificationType } from "vscode-messenger-common";
 
 const _preFix = "agent-chat";
@@ -30,3 +30,9 @@ export const getChatHistory: RequestType<void, ChatHistoryResponse> = { method: 
 export const clearChatHistory: RequestType<void, ClearChatResponse> = { method: `${_preFix}/clearChatHistory` };
 export const getAgentStatus: RequestType<void, AgentStatusResponse> = { method: `${_preFix}/getAgentStatus` };
 export const getSessionInfo: RequestType<void, SessionInfoResponse> = { method: `${_preFix}/getSessionInfo` };
+export const getTraceDataForViewer: RequestType<GetTraceDataRequest, GetTraceDataResponse> = { method: `${_preFix}/getTraceDataForViewer` };
+export const getSessionTracesForViewer: RequestType<GetSessionTracesRequest, GetSessionTracesResponse> = { method: `${_preFix}/getSessionTracesForViewer` };
+export const exportTraceJson: NotificationType<ExportTraceRequest> = { method: `${_preFix}/exportTraceJson` };
+export const exportSessionJson: NotificationType<ExportSessionRequest> = { method: `${_preFix}/exportSessionJson` };
+export const exportTraceAsEvalset: NotificationType<ExportTraceAsEvalsetRequest> = { method: `${_preFix}/exportTraceAsEvalset` };
+export const exportSessionAsEvalset: NotificationType<ExportSessionAsEvalsetRequest> = { method: `${_preFix}/exportSessionAsEvalset` };

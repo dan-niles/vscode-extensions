@@ -16,7 +16,7 @@
  * under the License.
  */
 
-import { ChatReqMessage, ChatRespMessage, TraceInput, TraceStatus, ChatHistoryResponse, AgentStatusResponse, ClearChatResponse, ExecutionStep, SessionInput, SessionInfoResponse } from "./interfaces";
+import { ChatReqMessage, ChatRespMessage, TraceInput, TraceStatus, ChatHistoryResponse, AgentStatusResponse, ClearChatResponse, ExecutionStep, SessionInput, SessionInfoResponse, TraceDataPayload, GetTraceDataRequest, GetTraceDataResponse, GetSessionTracesRequest, GetSessionTracesResponse, ExportTraceRequest, ExportSessionRequest, ExportTraceAsEvalsetRequest, ExportSessionAsEvalsetRequest } from "./interfaces";
 
 export interface AgentChatAPI {
     getChatMessage: (params: ChatReqMessage) => Promise<ChatRespMessage>;
@@ -28,6 +28,12 @@ export interface AgentChatAPI {
     clearChatHistory: () => Promise<ClearChatResponse>;
     getAgentStatus: () => Promise<AgentStatusResponse>;
     getSessionInfo: () => Promise<SessionInfoResponse>;
+    getTraceDataForViewer: (params: GetTraceDataRequest) => Promise<GetTraceDataResponse>;
+    getSessionTracesForViewer: (params: GetSessionTracesRequest) => Promise<GetSessionTracesResponse>;
+    exportTraceJson: (params: ExportTraceRequest) => void;
+    exportSessionJson: (params: ExportSessionRequest) => void;
+    exportTraceAsEvalset: (params: ExportTraceAsEvalsetRequest) => void;
+    exportSessionAsEvalset: (params: ExportSessionAsEvalsetRequest) => void;
 }
 
-export type { ChatReqMessage, ChatRespMessage, TraceInput, TraceStatus, ChatHistoryResponse, AgentStatusResponse, ClearChatResponse, ExecutionStep, SessionInput, SessionInfoResponse };
+export type { ChatReqMessage, ChatRespMessage, TraceInput, TraceStatus, ChatHistoryResponse, AgentStatusResponse, ClearChatResponse, ExecutionStep, SessionInput, SessionInfoResponse, TraceDataPayload, GetTraceDataRequest, GetTraceDataResponse, GetSessionTracesRequest, GetSessionTracesResponse, ExportTraceRequest, ExportSessionRequest, ExportTraceAsEvalsetRequest, ExportSessionAsEvalsetRequest };

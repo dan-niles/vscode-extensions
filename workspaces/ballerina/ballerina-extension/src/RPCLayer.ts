@@ -19,7 +19,7 @@
 import { WebviewView, WebviewPanel, window } from 'vscode';
 import { Messenger } from 'vscode-messenger';
 import { StateMachine } from './stateMachine';
-import { stateChanged, getVisualizerLocation, VisualizerLocation, projectContentUpdated, aiStateChanged, sendAIStateEvent, popupStateChanged, getPopupVisualizerState, PopupVisualizerLocation, breakpointChanged, AIMachineEventType, ArtifactData, onArtifactUpdatedNotification, onArtifactUpdatedRequest, currentThemeChanged, AIMachineSendableEvent, checkpointCaptured, CheckpointCapturedPayload, promptUpdated, approvalOverlayState, ApprovalOverlayState } from '@wso2/ballerina-core';
+import { stateChanged, getVisualizerLocation, VisualizerLocation, projectContentUpdated, aiStateChanged, sendAIStateEvent, popupStateChanged, getPopupVisualizerState, PopupVisualizerLocation, breakpointChanged, AIMachineEventType, ArtifactData, onArtifactUpdatedNotification, onArtifactUpdatedRequest, currentThemeChanged, AIMachineSendableEvent, checkpointCaptured, CheckpointCapturedPayload, promptUpdated, approvalOverlayState, ApprovalOverlayState, showInlineAgentTerminal, getInlineAgentChatState, retryInlineAgentChat } from '@wso2/ballerina-core';
 import { VisualizerWebview } from './views/visualizer/webview';
 import { registerVisualizerRpcHandlers } from './rpc-managers/visualizer/rpc-handler';
 import { registerLangClientRpcHandlers } from './rpc-managers/lang-client/rpc-handler';
@@ -104,6 +104,19 @@ export class RPCLayer {
 
         // ----- Popup Views RPC Methods
         RPCLayer._messenger.onRequest(getPopupVisualizerState, () => getPopupContext());
+
+        // ----- Inline Agent Chat RPC Methods
+        // Lazy require to avoid circular dependency: rpc-manager imports RPCLayer
+        const rpcManager = () => require('./rpc-managers/bi-diagram/rpc-manager');
+        RPCLayer._messenger.onNotification(showInlineAgentTerminal, () => {
+            rpcManager().showCurrentInlineAgentTerminal();
+        });
+        RPCLayer._messenger.onRequest(getInlineAgentChatState, () => {
+            return rpcManager().getLatestInlineAgentChatState();
+        });
+        RPCLayer._messenger.onNotification(retryInlineAgentChat, () => {
+            rpcManager().retryLastInlineAgentChat();
+        });
 
         // ----- Register Integration Migration RPC Methods
         registerMigrateIntegrationRpcHandlers(RPCLayer._messenger);

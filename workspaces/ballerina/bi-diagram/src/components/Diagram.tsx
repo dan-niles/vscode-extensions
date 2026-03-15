@@ -96,6 +96,10 @@ export interface DiagramProps {
     }
     isUserAuthenticated?: boolean;
     expressionContext?: ExpressionContextProps;
+    containerRef?: React.RefObject<HTMLElement>;
+    hidePorts?: boolean;
+    hideControls?: boolean;
+    centerVertically?: boolean;
 }
 
 export function Diagram(props: DiagramProps) {
@@ -123,6 +127,10 @@ export function Diagram(props: DiagramProps) {
         overlay,
         isUserAuthenticated,
         expressionContext,
+        containerRef,
+        hidePorts,
+        hideControls,
+        centerVertically,
     } = props;
 
     const [showErrorFlow, setShowErrorFlow] = useState(false);
@@ -144,6 +152,50 @@ export function Diagram(props: DiagramProps) {
             clearDiagramZoomAndPosition();
         };
     }, []);
+
+    // For standalone diagrams: re-center when container is resized (e.g., panel drag)
+    useEffect(() => {
+        if (!hideControls || !containerRef?.current) {
+            return;
+        }
+        let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+        const observer = new ResizeObserver(() => {
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+            debounceTimer = setTimeout(() => {
+                const nodes = diagramEngine.getModel()?.getNodes() ?? [];
+                if (nodes.length === 0) { return; }
+
+                let minY = Infinity, maxY = -Infinity;
+                for (const node of nodes) {
+                    const pos = node.getPosition();
+                    const ch = (node as any).node?.viewState?.ch || 50;
+                    minY = Math.min(minY, pos.y);
+                    maxY = Math.max(maxY, pos.y + ch);
+                }
+
+                const container = containerRef.current;
+                if (!container) { return; }
+                const containerWidth = container.offsetWidth;
+                const containerHeight = container.offsetHeight;
+                const contentHeight = maxY - minY;
+                const offsetX = containerWidth / 2;
+                const offsetY = centerVertically
+                    ? (containerHeight - contentHeight) / 2 - minY
+                    : 0;
+
+                diagramEngine.getModel().setZoomLevel(100);
+                diagramEngine.getModel().setOffset(offsetX, offsetY);
+                diagramEngine.repaintCanvas();
+            }, 150);
+        });
+        observer.observe(containerRef.current);
+        return () => {
+            observer.disconnect();
+            if (debounceTimer) { clearTimeout(debounceTimer); }
+        };
+    }, [hideControls, centerVertically, diagramEngine, containerRef]);
 
     const getDiagramData = () => {
         let flowModel = cloneDeep(model);
@@ -278,7 +330,23 @@ export function Diagram(props: DiagramProps) {
         }
 
         if (nodes.length < 3 || !hasDiagramZoomAndPosition(model.fileName)) {
-            resetDiagramZoomAndPosition(model.fileName);
+            let offsetY: number | undefined;
+            if (centerVertically && nodes.length > 0 && containerRef?.current) {
+                // Compute content bounding box in diagram space
+                let minY = Infinity;
+                let maxY = -Infinity;
+                for (const node of nodes) {
+                    const pos = node.getPosition();
+                    const ch = (node as any).node?.viewState?.ch || 50;
+                    minY = Math.min(minY, pos.y);
+                    maxY = Math.max(maxY, pos.y + ch);
+                }
+                const containerHeight = containerRef.current.offsetHeight;
+                const contentHeight = maxY - minY;
+                // Offset so the content center aligns with the container center
+                offsetY = (containerHeight - contentHeight) / 2 - minY;
+            }
+            resetDiagramZoomAndPosition(model.fileName, containerRef?.current, offsetY);
         }
         loadDiagramZoomAndPosition(diagramEngine);
 
@@ -327,6 +395,7 @@ export function Diagram(props: DiagramProps) {
         suggestions: suggestions,
         project: project,
         readOnly: onAddNode === undefined || onDeleteNode === undefined || onNodeSelect === undefined || readOnly,
+        hidePorts: hidePorts,
         isUserAuthenticated: isUserAuthenticated,
         expressionContext: expressionContext || {
             completions: [],
@@ -351,7 +420,7 @@ export function Diagram(props: DiagramProps) {
 
     return (
         <>
-            <Controls engine={diagramEngine} />
+            {!hideControls && <Controls engine={diagramEngine} />}
             {diagramEngine && diagramModel && (
                 <DiagramContextProvider value={context}>
                     {overlay?.visible && <PopupOverlay onClose={overlay.onClickOverlay} />}

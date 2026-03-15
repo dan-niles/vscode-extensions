@@ -129,7 +129,10 @@ async function openTryItView(withNotice: boolean = false, resourceMetadata?: Res
                 if (matchingService) {
                     selectedService = matchingService;
                 }
-            } else {
+            }
+
+            // If no service was matched via metadata, fall back to QuickPick
+            if (!selectedService) {
                 const quickPickItems = services.map(service => ({
                     label: `'${service.basePath}' on ${service.listener.name}`,
                     description: `${service.type} Service`,
@@ -913,10 +916,10 @@ function compareListeners(serviceInfoListener: { name: string, port?: string }, 
         return true;
     }
 
-    // anonymous listeners
-    if (serviceMetadataListener.startsWith('new http:Listener') && serviceInfoListener.port) {
-        // Extract port from 'http:Listener(9090)'
-        const portMatch = serviceMetadataListener.match(/new http:Listener\((\d+)\)/);
+    // anonymous listeners - handle any listener type (e.g., http:Listener, ai:Listener, etc.)
+    if (serviceMetadataListener.startsWith('new ') && serviceInfoListener.port) {
+        // Extract port from patterns like 'new http:Listener(9090)', 'new ai:Listener(8080)', etc.
+        const portMatch = serviceMetadataListener.match(/new \w+:\w+\((\d+)/);
         if (portMatch && portMatch[1]) {
             const port = parseInt(portMatch[1], 10);
             return port === parseInt(serviceInfoListener.port);

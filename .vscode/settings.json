@@ -1,5 +1,5 @@
 {
-  "editor.formatOnSave": false,
+  "editor.formatOnSave": true,
   "search.followSymlinks": false,
   "typescript.tsc.autoDetect": "off",
   "prettier.printWidth": 120,

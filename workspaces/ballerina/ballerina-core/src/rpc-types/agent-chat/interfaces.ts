@@ -77,3 +77,47 @@ export interface SessionInfoResponse {
     sessionId: string;
     chatEndpoint: string;
 }
+
+export interface TraceDataPayload {
+    traceId: string;
+    spans: any[];
+    resource: any;
+    scope: any;
+    firstSeen: string;
+    lastSeen: string;
+}
+
+export interface GetTraceDataRequest {
+    traceId: string;
+}
+
+export interface GetSessionTracesRequest {
+    sessionId?: string;
+}
+
+export interface GetTraceDataResponse {
+    traceData: TraceDataPayload;
+}
+
+export interface ExportTraceRequest {
+    traceData: TraceDataPayload;
+}
+
+export interface ExportSessionRequest {
+    sessionTraces: TraceDataPayload[];
+    sessionId: string;
+}
+
+export interface ExportTraceAsEvalsetRequest {
+    traceData: TraceDataPayload;
+}
+
+export interface ExportSessionAsEvalsetRequest {
+    sessionTraces: TraceDataPayload[];
+    sessionId: string;
+}
+
+export interface GetSessionTracesResponse {
+    traces: TraceDataPayload[];
+    sessionId: string;
+}

@@ -23,6 +23,7 @@ import MainPanel from "./MainPanel";
 import styled from '@emotion/styled';
 import AIPanel from "./views/AIPanel/AIPanel";
 import { AgentChat } from "./views/AgentChatPanel/AgentChat";
+import { InlineAgentChatView } from "./views/InlineAgentChat";
 import { EvaluationHistory } from "./views/EvaluationHistory/EvaluationHistory";
 import { EvaluationReport } from "./views/EvaluationReport/EvaluationReport";
 import { VSCodeProgressRing } from "@vscode/webview-ui-toolkit/react";
@@ -92,7 +93,8 @@ const MODES = {
     RUNTIME_SERVICES: "runtime-services",
     AGENT_CHAT: "agent-chat",
     EVALUATION_HISTORY: "evaluation-history",
-    EVALUATION_REPORT: "evaluation-report"
+    EVALUATION_REPORT: "evaluation-report",
+    INLINE_AGENT_CHAT: "inline-agent-chat"
 };
 
 export function Visualizer({ mode }: { mode: string }) {
@@ -132,6 +134,8 @@ export function Visualizer({ mode }: { mode: string }) {
                         return <EvaluationHistory />
                     case MODES.EVALUATION_REPORT:
                         return <EvaluationReport />
+                    case MODES.INLINE_AGENT_CHAT:
+                        return <InlineAgentChatView />
                 }
             })()}
         </>

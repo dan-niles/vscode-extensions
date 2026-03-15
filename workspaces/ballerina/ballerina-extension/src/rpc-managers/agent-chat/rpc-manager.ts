@@ -28,9 +28,20 @@ import {
     AgentStatusResponse,
     ClearChatResponse,
     SessionInput,
-    SessionInfoResponse
+    SessionInfoResponse,
+    GetTraceDataRequest,
+    GetTraceDataResponse,
+    GetSessionTracesRequest,
+    GetSessionTracesResponse,
+    ExportTraceRequest,
+    ExportSessionRequest,
+    ExportTraceAsEvalsetRequest,
+    ExportSessionAsEvalsetRequest,
+    TraceDataPayload,
 } from "@wso2/ballerina-core";
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as os from 'os';
 import { extension } from '../../BalExtensionContext';
 import { TracerMachine, TraceServer } from "../../features/tracing";
 import { TraceDetailsWebview } from "../../features/tracing/trace-details-webview";
@@ -503,5 +514,110 @@ export class AgentChatRpcManager implements AgentChatAPI {
             sessionId: extension.agentChatContext?.chatSessionId || '',
             chatEndpoint: extension.agentChatContext?.chatEp || '',
         };
+    }
+
+    async getTraceDataForViewer(params: GetTraceDataRequest): Promise<GetTraceDataResponse> {
+        const traces = TraceServer.getTraces();
+        const trace = traces.find(t => t.traceId === params.traceId);
+
+        if (!trace) {
+            throw new Error(`Trace not found: ${params.traceId}`);
+        }
+
+        vscode.commands.executeCommand('workbench.action.closeSidebar');
+
+        return {
+            traceData: this.convertTraceToViewerData(trace),
+        };
+    }
+
+    async getSessionTracesForViewer(params: GetSessionTracesRequest): Promise<GetSessionTracesResponse> {
+        const sessionId = params.sessionId || extension.agentChatContext?.chatSessionId;
+        if (!sessionId) {
+            throw new Error('No active session found');
+        }
+
+        vscode.commands.executeCommand('workbench.action.closeSidebar');
+
+        const sessionTraces = TraceServer.getTracesBySessionId(sessionId);
+        return {
+            traces: sessionTraces.map(trace => this.convertTraceToViewerData(trace)),
+            sessionId,
+        };
+    }
+
+    private convertTraceToViewerData(trace: Trace): TraceDataPayload {
+        return {
+            traceId: trace.traceId,
+            spans: trace.spans.map(span => ({
+                spanId: span.spanId,
+                traceId: span.traceId,
+                parentSpanId: span.parentSpanId,
+                name: span.name,
+                kind: span.kind,
+                startTime: span.startTime,
+                endTime: span.endTime,
+                status: (span as any).status,
+                attributes: span.attributes || [],
+            })),
+            resource: {
+                name: trace.resource.name,
+                attributes: trace.resource.attributes || [],
+            },
+            scope: {
+                name: trace.scope.name,
+                version: trace.scope.version,
+                attributes: trace.scope.attributes || [],
+            },
+            firstSeen: trace.firstSeen.toISOString(),
+            lastSeen: trace.lastSeen.toISOString(),
+        };
+    }
+
+    private async saveJsonFile(fileName: string, content: string): Promise<void> {
+        const wf = vscode.workspace.workspaceFolders?.[0];
+        let defaultUri: vscode.Uri;
+
+        if (wf) {
+            const tracesDirPath = path.join(wf.uri.fsPath, 'traces');
+            try {
+                await vscode.workspace.fs.createDirectory(vscode.Uri.file(tracesDirPath));
+            } catch (e) { /* ignore */ }
+            defaultUri = vscode.Uri.file(path.join(tracesDirPath, fileName));
+        } else {
+            defaultUri = vscode.Uri.file(path.join(os.homedir(), fileName));
+        }
+
+        const fileUri = await vscode.window.showSaveDialog({
+            defaultUri,
+            filters: { 'JSON Files': ['json'], 'All Files': ['*'] }
+        });
+
+        if (fileUri) {
+            await vscode.workspace.fs.writeFile(fileUri, new TextEncoder().encode(content));
+            vscode.window.showInformationMessage(`Exported to ${fileUri.fsPath}`);
+        }
+    }
+
+    async exportTraceJson(params: ExportTraceRequest): Promise<void> {
+        const fileName = `trace-${params.traceData.traceId}.json`;
+        await this.saveJsonFile(fileName, JSON.stringify(params.traceData, null, 2));
+    }
+
+    async exportSessionJson(params: ExportSessionRequest): Promise<void> {
+        const fileName = `session-${params.sessionId}.json`;
+        await this.saveJsonFile(fileName, JSON.stringify({
+            sessionId: params.sessionId,
+            traces: params.sessionTraces,
+        }, null, 2));
+    }
+
+    async exportTraceAsEvalset(params: ExportTraceAsEvalsetRequest): Promise<void> {
+        // TraceDataPayload matches TraceDetailsWebview's local TraceData shape at runtime
+        await TraceDetailsWebview.exportTraceAsEvalsetStatic(params.traceData as any);
+    }
+
+    async exportSessionAsEvalset(params: ExportSessionAsEvalsetRequest): Promise<void> {
+        await TraceDetailsWebview.exportSessionAsEvalsetStatic(params.sessionTraces as any[], params.sessionId);
     }
 }
