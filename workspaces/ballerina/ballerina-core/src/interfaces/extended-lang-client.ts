@@ -1422,6 +1422,7 @@ export interface ServiceClassSourceRequest {
 export interface FunctionModelRequest {
     type: string;
     functionName: string;
+    projectPath?: string;
 }
 
 export interface FunctionModelResponse {

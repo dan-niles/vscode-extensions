@@ -486,7 +486,7 @@ export function ServiceDesigner(props: ServiceDesignerProps) {
     const handleNewMcpTool = () => {
         rpcClient
             .getServiceDesignerRpcClient()
-            .getFunctionModel({ type: "mcp", functionName: "remote" })
+            .getFunctionModel({ type: "mcp", functionName: "remote", projectPath: projectPath })
             .then((res) => {
                 console.log("New Function Model: ", res.function);
                 // let fields = res.function ? convertConfig(res.function.properties) : [];
