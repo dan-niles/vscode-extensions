@@ -40,31 +40,36 @@ export type AnthropicModel =
     | typeof ANTHROPIC_SONNET_4_6
     | typeof ANTHROPIC_OPUS_4_6;
 
-// Bedrock model ID mappings
+// Bedrock inference-profile IDs (without the regional prefix).
+// Base IDs verified against `aws bedrock list-inference-profiles`.
 const BEDROCK_MODEL_MAP: Record<string, string> = {
-    [ANTHROPIC_HAIKU_4_5]: "anthropic.claude-3-5-haiku-20241022-v1:0",
-    [ANTHROPIC_SONNET_4_6]: "anthropic.claude-sonnet-4-6-20250619-v1:0",
-    [ANTHROPIC_OPUS_4_6]: "anthropic.claude-opus-4-6-20250619-v1:0",
+    [ANTHROPIC_HAIKU_4_5]: "anthropic.claude-haiku-4-5-20251001-v1:0",
+    [ANTHROPIC_SONNET_4_6]: "anthropic.claude-sonnet-4-6",
+    [ANTHROPIC_OPUS_4_6]: "anthropic.claude-opus-4-6-v1",
 };
 
 /**
- * Get the regional prefix for Bedrock model IDs based on AWS region.
- * Cross-region inference requires a regional prefix (e.g., us., eu.).
+ * Bedrock 4.x models can only be invoked through an inference profile, not as
+ * on-demand foundation models. Region-pinned profiles (us./eu./ap./...) are
+ * not published in every AWS region for every model, so we always use the
+ * `global.` profile — it is published for all three models we support and is
+ * accessible from any Bedrock-enabled region.
+ *
+ * Trade-off: `global.` may cost slightly more per token than a region-pinned
+ * profile and offers no data-residency guarantee. If a user needs region
+ * pinning we will need to add a setting and a region→profile lookup.
  */
-export const getBedrockRegionalPrefix = (region: string): string => {
-    const prefix = region.split('-')[0];
-    switch (prefix) {
-        case 'us':
-        case 'eu':
-        case 'ap':
-        case 'ca':
-        case 'sa':
-        case 'me':
-        case 'af':
-            return prefix;
-        default:
-            return 'us';
-    }
+const BEDROCK_INFERENCE_PROFILE_PREFIX = 'global';
+
+export const getBedrockRegionalPrefix = (_region: string): string => BEDROCK_INFERENCE_PROFILE_PREFIX;
+
+/**
+ * Resolve the Bedrock inference-profile ID used to validate AWS credentials.
+ * Uses Haiku 4.5 — cheapest of the three.
+ */
+export const getBedrockValidationModelId = (region: string): string => {
+    const regionalPrefix = getBedrockRegionalPrefix(region);
+    return `${regionalPrefix}.${BEDROCK_MODEL_MAP[ANTHROPIC_HAIKU_4_5]}`;
 };
 
 let cachedAnthropic: ReturnType<typeof createAnthropic> | null = null;
@@ -309,12 +314,17 @@ const getBedrockProvider = async (): Promise<{
     }
 
     // Always recreate to ensure fresh credentials
-    cachedBedrock = createAmazonBedrock({
-        region: credentials.region,
-        accessKeyId: credentials.accessKeyId,
-        secretAccessKey: credentials.secretAccessKey,
-        sessionToken: credentials.sessionToken,
-    });
+    cachedBedrock = credentials.authType === 'api_key'
+        ? createAmazonBedrock({
+            region: credentials.region,
+            apiKey: credentials.apiKey,
+        })
+        : createAmazonBedrock({
+            region: credentials.region,
+            accessKeyId: credentials.accessKeyId,
+            secretAccessKey: credentials.secretAccessKey,
+            sessionToken: credentials.sessionToken,
+        });
 
     return { provider: cachedBedrock, credentials };
 };

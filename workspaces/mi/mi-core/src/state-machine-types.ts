@@ -153,10 +153,15 @@ export type AIMachineEventMap = {
     [AI_EVENT_TYPE.SUBMIT_API_KEY]: { apiKey: string };
     [AI_EVENT_TYPE.AUTH_WITH_AWS_BEDROCK]: undefined;
     [AI_EVENT_TYPE.SUBMIT_AWS_CREDENTIALS]: {
-        accessKeyId: string;
-        secretAccessKey: string;
+        authType?: 'iam';
+        accessKeyId?: string;
+        secretAccessKey?: string;
         region: string;
         sessionToken?: string;
+    } | {
+        authType: 'api_key';
+        apiKey: string;
+        region: string;
     };
     [AI_EVENT_TYPE.SIGN_IN_SUCCESS]: undefined;
     [AI_EVENT_TYPE.LOGOUT]: undefined;
@@ -196,12 +201,23 @@ interface AnthropicKeySecrets {
     apiKey: string;
 }
 
-export interface AwsBedrockSecrets {
+export type AwsBedrockAuthType = 'iam' | 'api_key';
+
+export interface AwsBedrockIamSecrets {
+    authType?: 'iam';
     accessKeyId: string;
     secretAccessKey: string;
     region: string;
     sessionToken?: string;
 }
+
+export interface AwsBedrockApiKeySecrets {
+    authType: 'api_key';
+    apiKey: string;
+    region: string;
+}
+
+export type AwsBedrockSecrets = AwsBedrockIamSecrets | AwsBedrockApiKeySecrets;
 
 export type AuthCredentials =
     | {

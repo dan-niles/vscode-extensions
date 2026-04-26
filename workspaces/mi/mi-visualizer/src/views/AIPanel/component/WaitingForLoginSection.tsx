@@ -25,6 +25,7 @@ import { VSCodeButton, VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 
 // Minimum length for Anthropic API key validation
 const MIN_ANTHROPIC_API_KEY_LENGTH = 20;
+type BedrockAuthType = "api_key" | "iam";
 
 const Container = styled.div`
     display: flex;
@@ -171,6 +172,52 @@ const ErrorMessage = styled.div`
     width: 100%;
 `;
 
+const AuthModeSelector = styled.div`
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+`;
+
+const AuthModeButton = styled.button<{ selected: boolean }>`
+    border: 1px solid ${(props: { selected: boolean }) =>
+        props.selected ? "var(--vscode-button-background)" : "var(--vscode-editorWidget-border)"};
+    background: ${(props: { selected: boolean }) =>
+        props.selected ? "var(--vscode-button-secondaryBackground)" : "var(--vscode-editor-background)"};
+    color: var(--vscode-foreground);
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 8px;
+    text-align: left;
+    min-width: 0;
+    &:hover {
+        border-color: var(--vscode-focusBorder);
+    }
+    &:disabled {
+        cursor: not-allowed;
+        opacity: 0.65;
+    }
+`;
+
+const AuthModeTitle = styled.div`
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+`;
+
+const AuthModeDescription = styled.div`
+    color: var(--vscode-descriptionForeground);
+    font-size: 11px;
+    line-height: 1.4;
+    margin-top: 2px;
+`;
+
+const HelperText = styled.div`
+    color: var(--vscode-descriptionForeground);
+    font-size: 11px;
+    line-height: 1.4;
+`;
+
 const WaitingMessage = styled.div`
     border-left: 0.3rem solid var(--vscode-focusBorder);
     background: var(--vscode-inputValidation-infoBackground);
@@ -194,6 +241,9 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
     const [apiKey, setApiKey] = useState("");
     const [showApiKey, setShowApiKey] = useState(false);
     const [clientError, setClientError] = useState<string>("");
+    const [bedrockAuthType, setBedrockAuthType] = useState<BedrockAuthType>("api_key");
+    const [bedrockApiKey, setBedrockApiKey] = useState("");
+    const [showBedrockApiKey, setShowBedrockApiKey] = useState(false);
     const [awsCredentials, setAwsCredentials] = useState({
         accessKeyId: "",
         secretAccessKey: "",
@@ -251,6 +301,14 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
         setShowApiKey(!showApiKey);
     };
 
+    const handleBedrockApiKeyChange = (e: any) => {
+        const value = e.target?.value ?? '';
+        setBedrockApiKey(value);
+        if (clientError) {
+            setClientError("");
+        }
+    };
+
     const handleAwsCredentialChange = (field: string) => (e: any) => {
         const value = e.target?.value ?? '';
         setAwsCredentials(prev => ({ ...prev, [field]: value }));
@@ -263,6 +321,28 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
         setClientError("");
         const { accessKeyId, secretAccessKey, region, sessionToken } = awsCredentials;
 
+        if (!region.trim()) {
+            setClientError("Please enter your AWS Region");
+            return;
+        }
+
+        if (bedrockAuthType === "api_key") {
+            if (!bedrockApiKey.trim()) {
+                setClientError("Please enter your Amazon Bedrock API key");
+                return;
+            }
+
+            rpcClient.sendAIStateEvent({
+                type: AI_EVENT_TYPE.SUBMIT_AWS_CREDENTIALS,
+                payload: {
+                    authType: "api_key",
+                    apiKey: bedrockApiKey.trim(),
+                    region: region.trim(),
+                },
+            } as any);
+            return;
+        }
+
         if (!accessKeyId.trim()) {
             setClientError("Please enter your AWS Access Key ID");
             return;
@@ -271,14 +351,11 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
             setClientError("Please enter your AWS Secret Access Key");
             return;
         }
-        if (!region.trim()) {
-            setClientError("Please enter your AWS Region");
-            return;
-        }
 
         rpcClient.sendAIStateEvent({
             type: AI_EVENT_TYPE.SUBMIT_AWS_CREDENTIALS,
             payload: {
+                authType: "iam",
                 accessKeyId: accessKeyId.trim(),
                 secretAccessKey: secretAccessKey.trim(),
                 region: region.trim(),
@@ -349,16 +426,171 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
     }
 
     if (loginMethod === LoginMethod.AWS_BEDROCK) {
+        const hasRegion = awsCredentials.region.trim();
+        const isFormValid = bedrockAuthType === "api_key"
+            ? hasRegion && bedrockApiKey.trim()
+            : hasRegion && awsCredentials.accessKeyId.trim() && awsCredentials.secretAccessKey.trim();
+
         return (
             <Container>
-                <AlertContainer variant="secondary">
-                    <Title>AWS Bedrock — Coming Soon</Title>
+                <AlertContainer variant="primary">
+                    <Title>Connect with AWS Bedrock</Title>
                     <SubTitle>
-                        AWS Bedrock support for the agent mode is currently unavailable. Full support is coming in a future release.
+                        Choose an Amazon Bedrock authentication method. Your credentials are securely stored and used only for
+                        WSO2 Integrator Copilot requests.
                     </SubTitle>
+
+                    <AuthModeSelector>
+                        <AuthModeButton
+                            type="button"
+                            selected={bedrockAuthType === "api_key"}
+                            onClick={() => {
+                                setBedrockAuthType("api_key");
+                                setClientError("");
+                            }}
+                            disabled={isValidating}
+                        >
+                            <AuthModeTitle>Bedrock API key</AuthModeTitle>
+                            <AuthModeDescription>Bearer token for Bedrock Runtime</AuthModeDescription>
+                        </AuthModeButton>
+                        <AuthModeButton
+                            type="button"
+                            selected={bedrockAuthType === "iam"}
+                            onClick={() => {
+                                setBedrockAuthType("iam");
+                                setClientError("");
+                            }}
+                            disabled={isValidating}
+                        >
+                            <AuthModeTitle>IAM credentials</AuthModeTitle>
+                            <AuthModeDescription>Access key, secret, and optional session token</AuthModeDescription>
+                        </AuthModeButton>
+                    </AuthModeSelector>
+
+                    <InputContainer>
+                        <InputRow>
+                            <StyledTextField
+                                type="text"
+                                placeholder="AWS Region (e.g., us-east-1)"
+                                value={awsCredentials.region}
+                                onChange={handleAwsCredentialChange("region")}
+                                {...(isValidating ? { disabled: true } : {})}
+                            />
+                        </InputRow>
+                    </InputContainer>
+
+                    {bedrockAuthType === "api_key" && (
+                        <>
+                            <InputContainer>
+                                <InputRow>
+                                    <StyledTextField
+                                        type={showBedrockApiKey ? "text" : "password"}
+                                        placeholder="Amazon Bedrock API key"
+                                        value={bedrockApiKey}
+                                        onChange={handleBedrockApiKeyChange}
+                                        {...(isValidating ? { disabled: true } : {})}
+                                    />
+                                    <EyeButton
+                                        type="button"
+                                        onClick={() => setShowBedrockApiKey(!showBedrockApiKey)}
+                                        title={showBedrockApiKey ? "Hide Bedrock API key" : "Show Bedrock API key"}
+                                        {...(isValidating ? { disabled: true } : {})}
+                                    >
+                                        <Codicon name={showBedrockApiKey ? "eye-closed" : "eye"} />
+                                    </EyeButton>
+                                </InputRow>
+                            </InputContainer>
+                            <HelperText>
+                                Use an Amazon Bedrock API key generated for the same AWS Region.
+                            </HelperText>
+                        </>
+                    )}
+
+                    {bedrockAuthType === "iam" && (
+                        <>
+                            <InputContainer>
+                                <InputRow>
+                                    <StyledTextField
+                                        type={showAwsAccessKey ? "text" : "password"}
+                                        placeholder="AWS Access Key ID"
+                                        value={awsCredentials.accessKeyId}
+                                        onChange={handleAwsCredentialChange("accessKeyId")}
+                                        {...(isValidating ? { disabled: true } : {})}
+                                    />
+                                    <EyeButton
+                                        type="button"
+                                        onClick={() => setShowAwsAccessKey(!showAwsAccessKey)}
+                                        title={showAwsAccessKey ? "Hide access key" : "Show access key"}
+                                        {...(isValidating ? { disabled: true } : {})}
+                                    >
+                                        <Codicon name={showAwsAccessKey ? "eye-closed" : "eye"} />
+                                    </EyeButton>
+                                </InputRow>
+                            </InputContainer>
+
+                            <InputContainer>
+                                <InputRow>
+                                    <StyledTextField
+                                        type={showAwsSecretKey ? "text" : "password"}
+                                        placeholder="AWS Secret Access Key"
+                                        value={awsCredentials.secretAccessKey}
+                                        onChange={handleAwsCredentialChange("secretAccessKey")}
+                                        {...(isValidating ? { disabled: true } : {})}
+                                    />
+                                    <EyeButton
+                                        type="button"
+                                        onClick={() => setShowAwsSecretKey(!showAwsSecretKey)}
+                                        title={showAwsSecretKey ? "Hide secret key" : "Show secret key"}
+                                        {...(isValidating ? { disabled: true } : {})}
+                                    >
+                                        <Codicon name={showAwsSecretKey ? "eye-closed" : "eye"} />
+                                    </EyeButton>
+                                </InputRow>
+                            </InputContainer>
+
+                            <InputContainer>
+                                <InputRow>
+                                    <StyledTextField
+                                        type={showAwsSessionToken ? "text" : "password"}
+                                        placeholder="Session Token (optional)"
+                                        value={awsCredentials.sessionToken}
+                                        onChange={handleAwsCredentialChange("sessionToken")}
+                                        {...(isValidating ? { disabled: true } : {})}
+                                    />
+                                    <EyeButton
+                                        type="button"
+                                        onClick={() => setShowAwsSessionToken(!showAwsSessionToken)}
+                                        title={showAwsSessionToken ? "Hide session token" : "Show session token"}
+                                        {...(isValidating ? { disabled: true } : {})}
+                                    >
+                                        <Codicon name={showAwsSessionToken ? "eye-closed" : "eye"} />
+                                    </EyeButton>
+                                </InputRow>
+                            </InputContainer>
+                        </>
+                    )}
+
+                    {displayError && (
+                        <ErrorMessage>
+                            <Codicon name="error" />
+                            <span>{displayError}</span>
+                        </ErrorMessage>
+                    )}
+
                     <ButtonContainer>
-                        <VSCodeButton appearance="secondary" onClick={cancelLogin}>
-                            Back
+                        <VSCodeButton
+                            appearance="primary"
+                            onClick={connectWithAwsBedrock}
+                            {...(isValidating || !isFormValid ? { disabled: true } : {})}
+                        >
+                            {isValidating ? "Validating..." : "Connect to AWS Bedrock"}
+                        </VSCodeButton>
+                        <VSCodeButton
+                            appearance="secondary"
+                            onClick={cancelLogin}
+                            {...(isValidating ? { disabled: true } : {})}
+                        >
+                            Cancel
                         </VSCodeButton>
                     </ButtonContainer>
                 </AlertContainer>

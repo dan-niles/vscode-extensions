@@ -186,8 +186,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok }) => {
                             <p className="text-[13px]" style={{ color: "var(--vscode-foreground)" }}>Sign out</p>
                             <p className="text-[11px] mt-0.5" style={{ color: "var(--vscode-descriptionForeground)" }}>
                                 {isByok
-                                    ? "End your session and clear credentials"
-                                    : "End your session and disconnect from AI services"}
+                                    ? "Clear MI Copilot credentials stored by this extension"
+                                    : "Sign out of MI Copilot while staying signed in to the WSO2 platform"}
                             </p>
                         </div>
                         <button
