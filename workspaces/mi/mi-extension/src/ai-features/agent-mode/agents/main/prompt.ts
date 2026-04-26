@@ -25,7 +25,7 @@ import { getAvailableConnectorCatalog } from '../../tools/connector_tools';
 import { getPlanModeReminder as getPlanModeSessionReminder } from '../../tools/plan_mode_tools';
 import { getRuntimeVersionFromPom } from '../../tools/connector_store_cache';
 import { getServerPathFromConfig } from '../../../../util/onboardingUtils';
-import { AgentMode } from '@wso2/mi-core';
+import { AgentMode, LoginMethod } from '@wso2/mi-core';
 import { getModeReminder } from './mode';
 import { logDebug } from '../../../copilot/logger';
 import { getStateMachine } from '../../../../stateMachine';
@@ -86,6 +86,7 @@ Is directory a git repo: {{env_is_git_repo}}
 Platform: {{env_platform}}
 OS Version: {{env_os_version}}
 Today's date: {{env_today}}
+Copilot backend: {{env_backend}}
 MI Runtime version: {{env_mi_runtime_version}}
 MI Runtime home path: {{env_mi_runtime_home_path}}
 MI Runtime log directory: {{env_mi_log_dir_path}}
@@ -156,7 +157,6 @@ You are in {{mode_upper}} mode.
 {{/if}}
 
 <system-reminder>
-YOU ARE IN DEVELOPMENT PHASE. NOT IN PRODUCTION YET. HELP THE DEVELOPER IF DEVELOPER ASKS META QUESTIONS ABOUT YOUR INTERNALS/TOOL CALLS etc
 **DO NOT CREATE ANY README FILES or ANY DOCUMENTATION FILES after end of the task unless explicitly requested by the user.**
 </system-reminder>
 
@@ -191,6 +191,33 @@ export interface UserPromptParams {
     includeSessionContext?: boolean;
     /** True when the active provider can't run web_search/web_fetch (e.g. Bedrock without a Tavily key). */
     webSearchUnavailable?: boolean;
+    /**
+     * Active Copilot backend for this session. Surfaced to the model in the
+     * `<env>` block so it can reason about backend-specific behaviour (notably the
+     * web tools — Anthropic server-side on Proxy/BYOK, Tavily-local on Bedrock).
+     */
+    loginMethod?: LoginMethod;
+}
+
+// ============================================================================
+// Backend label mapping
+// ============================================================================
+
+/**
+ * One-line summary of each Copilot backend, surfaced in the `<env>` block.
+ * Keep in sync with the "Copilot backends" section of system.ts.
+ */
+function describeBackend(loginMethod?: LoginMethod): string {
+    switch (loginMethod) {
+        case LoginMethod.MI_INTEL:
+            return 'WSO2 Integrator Copilot Proxy (SSO via WSO2 Devant) — quota-limited; Anthropic server-side web_search / web_fetch';
+        case LoginMethod.ANTHROPIC_KEY:
+            return 'Anthropic Direct (BYOK) — user-paid; Anthropic server-side web_search / web_fetch';
+        case LoginMethod.AWS_BEDROCK:
+            return 'AWS Bedrock — user-paid; web tools only available when a Tavily API key is configured (Tavily-backed wrapper)';
+        default:
+            return 'unknown';
+    }
 }
 
 // ============================================================================
@@ -431,6 +458,7 @@ export async function getUserPrompt(params: UserPromptParams): Promise<UserPromp
         env_platform: process.platform,
         env_os_version: `${os.type()} ${os.release()}`,
         env_today: today,
+        env_backend: describeBackend(params.loginMethod),
         env_mi_runtime_version: runtimeVersion || 'unknown',
         env_mi_runtime_home_path: runtimePaths.runtimeHomePath,
         env_mi_log_dir_path: runtimePaths.logDirPath,

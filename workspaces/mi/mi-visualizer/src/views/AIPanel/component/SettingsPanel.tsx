@@ -19,7 +19,6 @@
 import React, { useEffect, useState } from "react";
 import { Codicon } from "@wso2/ui-toolkit";
 import { useMICopilotContext } from "./MICopilotContext";
-import { readWebAccessPreapproved, writeWebAccessPreapproved } from "../utils";
 import type { MainModelPreset, SubModelPreset } from "@wso2/mi-rpc-client/src/rpc-clients/agent-mode/rpc-client";
 
 interface SettingsPanelProps {
@@ -76,9 +75,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
     };
 
     // ----- Web Search settings -----
-    // Approval-skip toggle (used by both Anthropic-direct and Bedrock paths).
-    const [isApprovalSkipEnabled, setIsApprovalSkipEnabled] = useState<boolean>(readWebAccessPreapproved());
-
     // Tavily key state (Bedrock-only). Loaded once on mount; saved on demand.
     // On Bedrock, the presence of a saved Tavily key IS the "web search enabled" signal.
     const [tavilyKey, setTavilyKey] = useState<string>("");
@@ -111,11 +107,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
         };
     }, [isAwsBedrock, rpcClient]);
 
-    const handleApprovalSkipToggle = (enabled: boolean) => {
-        setIsApprovalSkipEnabled(enabled);
-        writeWebAccessPreapproved(enabled);
-    };
-
     /**
      * Bedrock-only: enable/disable the entire web-search capability.
      * Toggling ON without a saved key shows the Tavily input.
@@ -144,10 +135,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
             if (response.success) {
                 setTavilyKey("");
                 setTavilyStatus({ kind: 'saved', message: 'Web search disabled.' });
-                if (isApprovalSkipEnabled) {
-                    setIsApprovalSkipEnabled(false);
-                    writeWebAccessPreapproved(false);
-                }
             } else {
                 setTavilyStatus({ kind: 'error', message: response.error || 'Failed to disable web search.' });
             }
@@ -310,11 +297,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
                     )}
                 </SettingsSection>
 
-                {/* Web Search */}
+                {/* Web Search — Bedrock only: Tavily key controls. Anthropic/Proxy auth uses
+                    Anthropic's first-party web tools and needs no UI. */}
+                {isAwsBedrock && (
                 <SettingsSection title="Web Search">
-                    {isAwsBedrock ? (
-                        <>
-                            {/* Bedrock: enable toggle (gated on Tavily key) + approval toggle. */}
+                    <>
+                            {/* Bedrock: enable toggle (gated on Tavily key). */}
                             <div className="flex items-center justify-between">
                                 <div className="pr-3">
                                     <p className="text-[13px]" style={{ color: "var(--vscode-foreground)" }}>
@@ -439,47 +427,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
                                 <Codicon name="link-external" />
                                 Get a free Tavily API key
                             </button>
-
-                            {/* Approval-skip toggle: only meaningful when web search is enabled. */}
-                            {isBedrockWebSearchOn && (
-                                <div className="flex items-center justify-between mt-3 pt-3" style={{ borderTop: "1px solid var(--vscode-panel-border)" }}>
-                                    <div className="pr-3">
-                                        <p className="text-[13px]" style={{ color: "var(--vscode-foreground)" }}>
-                                            Skip approval prompts
-                                        </p>
-                                        <p className="text-[11px] mt-0.5" style={{ color: "var(--vscode-descriptionForeground)" }}>
-                                            When on, web search and fetch run without per-call approval. When off, you'll be asked before each web request.
-                                        </p>
-                                    </div>
-                                    <ToggleGroup
-                                        options={["Off", "On"]}
-                                        selected={isApprovalSkipEnabled ? "On" : "Off"}
-                                        onSelect={(label) => handleApprovalSkipToggle(label === "On")}
-                                        compact
-                                    />
-                                </div>
-                            )}
-                        </>
-                    ) : (
-                        // Anthropic / Proxy: web search is always available; only the approval toggle.
-                        <div className="flex items-center justify-between">
-                            <div className="pr-3">
-                                <p className="text-[13px]" style={{ color: "var(--vscode-foreground)" }}>
-                                    Skip approval prompts
-                                </p>
-                                <p className="text-[11px] mt-0.5" style={{ color: "var(--vscode-descriptionForeground)" }}>
-                                    When on, web search and fetch run without per-call approval. When off, you'll be asked before each web request.
-                                </p>
-                            </div>
-                            <ToggleGroup
-                                options={["Off", "On"]}
-                                selected={isApprovalSkipEnabled ? "On" : "Off"}
-                                onSelect={(label) => handleApprovalSkipToggle(label === "On")}
-                                compact
-                            />
-                        </div>
-                    )}
+                    </>
                 </SettingsSection>
+                )}
 
                 {/* Account */}
                 <SettingsSection title="Account">

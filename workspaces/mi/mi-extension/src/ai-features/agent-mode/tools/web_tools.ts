@@ -16,26 +16,23 @@
  * under the License.
  */
 
-import { tool, generateText } from 'ai';
+import { tool } from 'ai';
 import { z } from 'zod';
-import { v4 as uuidv4 } from 'uuid';
+import type { AnthropicProvider } from '@ai-sdk/anthropic';
 import { tavily as createTavilyClient } from '@tavily/core';
-import { AgentEvent, LoginMethod } from '@wso2/mi-core';
 import { logError, logInfo } from '../../copilot/logger';
-import { ANTHROPIC_SONNET_4_6, AnthropicModel, getAnthropicProvider, getAnthropicClientForCustomModel } from '../../connection';
-import { getLoginMethod, getTavilyApiKey } from '../../auth';
-import { PendingPlanApproval } from './plan_mode_tools';
 import {
     ToolResult,
-    WEB_FETCH_TOOL_NAME,
-    WEB_SEARCH_TOOL_NAME,
     WebFetchExecuteFn,
     WebSearchExecuteFn,
 } from './types';
 
-type AgentEventHandler = (event: AgentEvent) => void;
+/**
+ * Which `web_search` / `web_fetch` implementation to register on the agent.
+ * Resolved once per turn in `executeAgent` from the active login method.
+ */
+export type WebToolsProvider = 'anthropic-server' | 'tavily-local' | 'none';
 
-type WebApprovalKind = 'web_search' | 'web_fetch';
 const MI_DOCS_DOMAIN = 'mi.docs.wso2.com';
 
 function sanitizeDomainList(domains?: string[]): string[] | undefined {
@@ -54,57 +51,18 @@ function sanitizeDomainList(domains?: string[]): string[] | undefined {
     return sanitized.length > 0 ? sanitized : undefined;
 }
 
-function extractToolOutput(result: any): unknown {
-    try {
-        const stepWithToolResults = (result?.steps || []).find((step: any) => Array.isArray(step?.toolResults) && step.toolResults.length > 0);
-        if (stepWithToolResults?.toolResults?.[0]) {
-            return stepWithToolResults.toolResults[0].output;
-        }
-    } catch {
-        // Ignore extraction issues and fall back to text output.
-    }
-
-    return undefined;
-}
-
-type BedrockTavilyGate =
-    | { isBedrock: false }
-    | { isBedrock: true; tavilyKey: string }
-    | { isBedrock: true; tavilyKey: null; notConfigured: ToolResult };
+// ============================================================================
+// Tavily-backed implementations (AWS Bedrock branch only)
+// ============================================================================
 
 /**
- * Returns the resolved Tavily availability for Bedrock auth, or a ready-to-return
- * NOT_CONFIGURED ToolResult that the caller can short-circuit with. For non-Bedrock
- * auth, just signals `isBedrock: false` and the caller proceeds with Anthropic.
- */
-async function resolveBedrockTavilyGate(toolKind: 'search' | 'fetch'): Promise<BedrockTavilyGate> {
-    const isBedrock = (await getLoginMethod()) === LoginMethod.AWS_BEDROCK;
-    if (!isBedrock) {
-        return { isBedrock: false };
-    }
-    const tavilyKey = await getTavilyApiKey();
-    if (tavilyKey) {
-        return { isBedrock: true, tavilyKey };
-    }
-    const isSearch = toolKind === 'search';
-    return {
-        isBedrock: true,
-        tavilyKey: null,
-        notConfigured: {
-            success: false,
-            message: `Web ${isSearch ? 'search' : 'fetch'} is not configured. Add a Tavily API key in the AI Panel settings (Web Search section) to enable web ${isSearch ? 'search' : 'fetch'} on AWS Bedrock.`,
-            error: isSearch ? 'WEB_SEARCH_NOT_CONFIGURED' : 'WEB_FETCH_NOT_CONFIGURED',
-        },
-    };
-}
-
-/**
- * Format a Tavily search response as a concise markdown summary suitable for the agent.
- * Mirrors the shape (`success/message`) that the Anthropic-backed path returns so
- * downstream code (chat-history persistence, UI rendering) doesn't need to branch.
+ * Format a Tavily search response as a concise markdown summary suitable for
+ * the agent. Mirrors the `{success, message}` shape used by the rest of our
+ * local tools so chat-history persistence and UI rendering don't need to branch.
  *
- * Uses `@tavily/core` directly (the AI SDK wrapper `@tavily/ai-sdk` is ESM-only and
- * doesn't resolve under our CJS webpack config).
+ * Uses `@tavily/core` directly (the AI SDK wrapper `@tavily/ai-sdk` is ESM-only
+ * and `"type": "module"` with `import`-only `exports`, so it can't be required
+ * by our CJS webpack bundle — see commit history for the previous attempt).
  */
 async function runTavilySearch(
     apiKey: string,
@@ -148,9 +106,6 @@ async function runTavilySearch(
     }
 }
 
-/**
- * Fetch a single URL via Tavily Extract and format the result similarly.
- */
 async function runTavilyExtract(apiKey: string, url: string, taskPrompt?: string): Promise<ToolResult> {
     try {
         const client = createTavilyClient({ apiKey });
@@ -194,209 +149,25 @@ async function runTavilyExtract(apiKey: string, url: string, taskPrompt?: string
     }
 }
 
-function getProviderToolFactory(provider: any, candidateNames: string[]): ((args: any) => any) | null {
-    for (const candidateName of candidateNames) {
-        const factory = provider?.tools?.[candidateName];
-        if (typeof factory === 'function') {
-            return factory;
-        }
-    }
-    return null;
-}
-
-async function requestWebApproval(
-    eventHandler: AgentEventHandler,
-    pendingApprovals: Map<string, PendingPlanApproval>,
-    request: {
-        sessionId: string;
-        kind: WebApprovalKind;
-        approvalTitle: string;
-        content: string;
-    },
-    mainAbortSignal?: AbortSignal
-): Promise<boolean> {
-    const approvalId = uuidv4();
-
-    eventHandler({
-        type: 'plan_approval_requested',
-        approvalId,
-        approvalKind: request.kind,
-        approvalTitle: request.approvalTitle,
-        approveLabel: 'Allow',
-        rejectLabel: 'Deny',
-        allowFeedback: false,
-        content: request.content,
-    } as any);
-
-    let settled = false;
-    const cleanup = (): void => {
-        if (settled) return;
-        settled = true;
-        pendingApprovals.delete(approvalId);
-        if (abortHandler && mainAbortSignal) {
-            mainAbortSignal.removeEventListener('abort', abortHandler);
-        }
-    };
-
-    let abortHandler: (() => void) | undefined;
-
-    const approval = await new Promise<{ approved: boolean; feedback?: string }>((resolve, reject) => {
-        pendingApprovals.set(approvalId, {
-            approvalId,
-            approvalKind: request.kind,
-            sessionId: request.sessionId,
-            resolve: (result) => {
-                cleanup();
-                resolve(result);
-            },
-            reject: (error: Error) => {
-                cleanup();
-                reject(error);
-            }
-        });
-
-        if (mainAbortSignal) {
-            if (mainAbortSignal.aborted) {
-                cleanup();
-                resolve({ approved: false });
-                return;
-            }
-            abortHandler = () => {
-                cleanup();
-                resolve({ approved: false });
-            };
-            mainAbortSignal.addEventListener('abort', abortHandler, { once: true });
-        }
-    });
-
-    return approval.approved;
-}
-
 /**
- * Creates execute function for web_search tool.
- * Requires explicit user consent before any outbound web search.
+ * Tavily-backed `web_search` execute. Used only on the AWS Bedrock branch.
  */
-export function createWebSearchExecute(
-    getAnthropicClient: (model: AnthropicModel) => Promise<any>,
-    eventHandler: AgentEventHandler,
-    pendingApprovals: Map<string, PendingPlanApproval>,
-    webAccessPreapproved: boolean,
-    sessionId: string,
-    mainModelId?: string,
-    mainModelIsCustom?: boolean,
-    mainAbortSignal?: AbortSignal
-): WebSearchExecuteFn {
+export function createWebSearchExecute(tavilyKey: string): WebSearchExecuteFn {
     return async (args): Promise<ToolResult> => {
-        const allowedDomains = sanitizeDomainList(args.allowed_domains);
-        const blockedDomains = sanitizeDomainList(args.blocked_domains);
-
-        // Bedrock has no first-party web tools — bail before bothering the user
-        // with an approval modal we can't honor.
-        const gate = await resolveBedrockTavilyGate('search');
-        if (gate.isBedrock && gate.tavilyKey === null) {
-            return gate.notConfigured;
-        }
-
-        let approved = true;
-        if (!webAccessPreapproved) {
-            approved = await requestWebApproval(eventHandler, pendingApprovals, {
-                sessionId,
-                kind: 'web_search',
-                approvalTitle: 'Allow Web Search?',
-                content: `Agent wants to search the web for: "${args.query}"`,
-            }, mainAbortSignal);
-        }
-
-        if (!approved) {
-            return {
-                success: false,
-                message: 'User denied permission to perform web search.',
-                error: 'WEB_SEARCH_DENIED',
-            };
-        }
-
-        try {
-            logInfo(`[WebSearchTool] Running query: ${args.query} (provider=${gate.isBedrock ? 'tavily' : 'anthropic'})`);
-
-            if (gate.isBedrock) {
-                return await runTavilySearch(gate.tavilyKey, {
-                    query: args.query,
-                    includeDomains: allowedDomains,
-                    excludeDomains: blockedDomains,
-                });
-            }
-
-            const anthropicProvider = await getAnthropicProvider();
-            const searchFactory = getProviderToolFactory(anthropicProvider as any, ['webSearch_20250305']);
-
-            if (!searchFactory) {
-                throw new Error('Anthropic web search tool is unavailable in this environment.');
-            }
-
-            const webSearch = searchFactory({
-                maxUses: 5,
-                ...(allowedDomains ? { allowedDomains } : {}),
-                ...(blockedDomains ? { blockedDomains } : {}),
-            });
-
-            const result = await generateText({
-                model: mainModelIsCustom && mainModelId
-                    ? await getAnthropicClientForCustomModel(mainModelId)
-                    : await getAnthropicClient((mainModelId || ANTHROPIC_SONNET_4_6) as AnthropicModel),
-                prompt: [
-                    `Search query: ${args.query}`,
-                    'Use the web_search tool and return concise findings with relevant source links.'
-                ].join('\n'),
-                tools: {
-                    web_search: webSearch,
-                },
-                abortSignal: mainAbortSignal,
-            });
-
-            const toolOutput = extractToolOutput(result);
-            const message = typeof toolOutput === 'string'
-                ? toolOutput
-                : result.text || (toolOutput ? JSON.stringify(toolOutput, null, 2) : 'Web search completed successfully.');
-
-            return {
-                success: true,
-                message,
-            };
-        } catch (error: any) {
-            logError('[WebSearchTool] Web search failed', error);
-            const errorMessage = error?.message || String(error);
-
-            if (errorMessage.includes('responses API is unavailable')) {
-                return {
-                    success: false,
-                    message: 'Web search failed: Anthropic responses API is unavailable in this environment. Upgrade @ai-sdk/anthropic to use web_search and web_fetch tools.',
-                    error: 'WEB_SEARCH_API_UNAVAILABLE',
-                };
-            }
-
-            return {
-                success: false,
-                message: `Web search failed: ${errorMessage}`,
-                error: 'WEB_SEARCH_FAILED',
-            };
-        }
+        logInfo(`[WebSearchTool] Tavily search: ${args.query}`);
+        return await runTavilySearch(tavilyKey, {
+            query: args.query,
+            includeDomains: sanitizeDomainList(args.allowed_domains),
+            excludeDomains: sanitizeDomainList(args.blocked_domains),
+        });
     };
 }
 
 /**
- * Creates execute function for web_fetch tool.
- * Requires explicit user consent before fetching remote content.
+ * Tavily-backed `web_fetch` execute. Used only on the AWS Bedrock branch.
+ * Hard-fails on `mi.docs.wso2.com` because Tavily Extract can't render JS.
  */
-export function createWebFetchExecute(
-    getAnthropicClient: (model: AnthropicModel) => Promise<any>,
-    eventHandler: AgentEventHandler,
-    pendingApprovals: Map<string, PendingPlanApproval>,
-    webAccessPreapproved: boolean,
-    sessionId: string,
-    mainModelId?: string,
-    mainModelIsCustom?: boolean,
-    mainAbortSignal?: AbortSignal
-): WebFetchExecuteFn {
+export function createWebFetchExecute(tavilyKey: string): WebFetchExecuteFn {
     return async (args): Promise<ToolResult> => {
         try {
             const hostname = new URL(args.url).hostname.toLowerCase();
@@ -408,109 +179,27 @@ export function createWebFetchExecute(
                 };
             }
         } catch {
-            // URL validity is already enforced by the tool input schema.
+            // URL validity is enforced by the input schema; ignore parse failures here.
         }
 
-        const allowedDomains = sanitizeDomainList(args.allowed_domains);
-        const blockedDomains = sanitizeDomainList(args.blocked_domains);
-
-        const gate = await resolveBedrockTavilyGate('fetch');
-        if (gate.isBedrock && gate.tavilyKey === null) {
-            return gate.notConfigured;
-        }
-
-        let approved = true;
-        if (!webAccessPreapproved) {
-            approved = await requestWebApproval(eventHandler, pendingApprovals, {
-                sessionId,
-                kind: 'web_fetch',
-                approvalTitle: 'Allow Web Fetch?',
-                content: `Agent wants to fetch content from: ${args.url}`,
-            }, mainAbortSignal);
-        }
-
-        if (!approved) {
-            return {
-                success: false,
-                message: 'User denied permission to fetch web content.',
-                error: 'WEB_FETCH_DENIED',
-            };
-        }
-
-        if (gate.isBedrock) {
-            logInfo(`[WebFetchTool] Tavily extract: ${args.url}`);
-            return await runTavilyExtract(gate.tavilyKey, args.url, args.prompt);
-        }
-
-        try {
-            logInfo(`[WebFetchTool] Fetching URL: ${args.url}`);
-            const anthropicProvider = await getAnthropicProvider();
-            const fetchFactory = getProviderToolFactory(anthropicProvider as any, ['webFetch_20250910', 'webFetch_20250305']);
-
-            if (!fetchFactory) {
-                throw new Error('Anthropic web fetch tool is unavailable in this environment.');
-            }
-
-            const webFetch = fetchFactory({
-                maxUses: 3,
-                ...(allowedDomains ? { allowedDomains } : {}),
-                ...(blockedDomains ? { blockedDomains } : {}),
-            });
-
-            const result = await generateText({
-                model: mainModelIsCustom && mainModelId
-                    ? await getAnthropicClientForCustomModel(mainModelId)
-                    : await getAnthropicClient((mainModelId || ANTHROPIC_SONNET_4_6) as AnthropicModel),
-                prompt: [
-                    `URL: ${args.url}`,
-                    `Task: ${args.prompt}`,
-                    'Use the web_fetch tool to retrieve and analyze this page.'
-                ].join('\n'),
-                tools: {
-                    web_fetch: webFetch,
-                },
-                abortSignal: mainAbortSignal,
-            });
-
-            const toolOutput = extractToolOutput(result);
-            const message = typeof toolOutput === 'string'
-                ? toolOutput
-                : result.text || (toolOutput ? JSON.stringify(toolOutput, null, 2) : 'Web fetch completed successfully.');
-
-            return {
-                success: true,
-                message,
-            };
-        } catch (error: any) {
-            logError('[WebFetchTool] Web fetch failed', error);
-            const errorMessage = error?.message || String(error);
-
-            if (errorMessage.includes('responses API is unavailable')) {
-                return {
-                    success: false,
-                    message: 'Web fetch failed: Anthropic responses API is unavailable in this environment. Upgrade @ai-sdk/anthropic to use web_search and web_fetch tools.',
-                    error: 'WEB_FETCH_API_UNAVAILABLE',
-                };
-            }
-
-            return {
-                success: false,
-                message: `Web fetch failed: ${errorMessage}`,
-                error: 'WEB_FETCH_FAILED',
-            };
-        }
+        logInfo(`[WebFetchTool] Tavily extract: ${args.url}`);
+        return await runTavilyExtract(tavilyKey, args.url, args.prompt);
     };
 }
 
 const webSearchSchema = z.object({
-    query: z.string().min(2).describe('The web search query to run.'),
+    query: z.string().min(2).describe('The web search query to run, written as natural language.'),
     allowed_domains: z.array(z.string()).optional().describe('Optional allow-list of domains to include in search results (for MI docs, use ["mi.docs.wso2.com"]).'),
     blocked_domains: z.array(z.string()).optional().describe('Optional block-list of domains to exclude from search results.'),
 });
 
 export function createWebSearchTool(execute: WebSearchExecuteFn) {
     return (tool as any)({
-        description: 'Search the web for up-to-date information when local project context is insufficient. Supports domain allow/block filters. For MI docs, use allowed_domains=["mi.docs.wso2.com"]. Requires user consent before execution; if denied, continue without web access.',
+        description:
+            'Search the web via Tavily. Phrase the query as a natural-language question or sentence — ' +
+            'Tavily ranks better on conversational queries than on keyword strings ' +
+            '(e.g. "How do I configure a WSO2 MI HTTP inbound endpoint?" not "WSO2 MI HTTP inbound endpoint config"). ' +
+            'Supports allowed_domains / blocked_domains. For MI docs, set allowed_domains=["mi.docs.wso2.com"].',
         inputSchema: webSearchSchema,
         execute,
     });
@@ -518,15 +207,43 @@ export function createWebSearchTool(execute: WebSearchExecuteFn) {
 
 const webFetchSchema = z.object({
     url: z.string().url().describe('The URL to fetch and analyze.'),
-    prompt: z.string().min(3).describe('What to extract or analyze from the fetched page.'),
+    prompt: z.string().min(3).describe('Natural-language description of what to extract from the page.'),
     allowed_domains: z.array(z.string()).optional().describe('Optional allow-list of domains that fetch requests can access.'),
     blocked_domains: z.array(z.string()).optional().describe('Optional block-list of domains that fetch requests must avoid.'),
 });
 
 export function createWebFetchTool(execute: WebFetchExecuteFn) {
     return (tool as any)({
-        description: 'Fetch and analyze content from a specific URL. Supports domain allow/block filters. web_fetch does not support JavaScript-rendered pages (including MI docs), so use web_search with allowed_domains=["mi.docs.wso2.com"] for MI docs. Requires user consent before execution; if denied, continue without web access.',
+        description:
+            'Fetch and extract content from a URL via Tavily. ' +
+            'Write the "prompt" field as a natural-language description of what to extract, not keywords. ' +
+            'Does not render JavaScript; mi.docs.wso2.com is JS-rendered, so use web_search with allowed_domains=["mi.docs.wso2.com"] for MI docs.',
         inputSchema: webFetchSchema,
         execute,
     });
+}
+
+// ============================================================================
+// Anthropic server-tool factory (MI_INTEL Proxy + ANTHROPIC_KEY branch)
+// ============================================================================
+
+/**
+ * Returns Anthropic's first-party `web_search` and `web_fetch` server tools.
+ * Register the result directly in the main agent's `streamText` tool map —
+ * Anthropic executes them inline as part of the model's turn (no local execute,
+ * no extra LLM round-trip).
+ *
+ * Stays on `_20250305` / `_20250910`. The `_20260209` versions only differ when
+ * the code-execution server tool is also enabled (dynamic filtering depends on
+ * it); we don't ship code-execution today.
+ */
+export function createAnthropicServerWebTools(provider: AnthropicProvider): Record<string, unknown> {
+    return {
+        web_search: provider.tools.webSearch_20250305({ maxUses: 5 }),
+        web_fetch: provider.tools.webFetch_20250910({
+            maxUses: 3,
+            citations: { enabled: true },
+            maxContentTokens: 32000,
+        }),
+    };
 }

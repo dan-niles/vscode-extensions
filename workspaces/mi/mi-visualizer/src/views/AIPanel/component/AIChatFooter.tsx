@@ -20,7 +20,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { FlexRow, Footer, FloatingInputContainer } from "../styles";
 import { Codicon } from "@wso2/ui-toolkit";
 import { useMICopilotContext, AgentMode } from "./MICopilotContext";
-import { handleFileAttach, convertChatHistoryToModelMessages, readWebAccessPreapproved } from "../utils";
+import { handleFileAttach, convertChatHistoryToModelMessages } from "../utils";
 import { VALID_FILE_TYPES } from "../constants";
 import { generateId, updateTokenInfo } from "../utils";
 import { BackendRequestType } from "../types";
@@ -162,10 +162,6 @@ function getApprovalFallbackContent(
             return 'Agent recommends entering Plan mode. Do you want to switch now?';
         case 'exit_plan_mode_without_plan':
             return 'Agent wants to exit Plan mode without a full plan. Do you want to continue?';
-        case 'web_search':
-            return 'Agent wants permission to run a web search.';
-        case 'web_fetch':
-            return 'Agent wants permission to fetch a web page.';
         case 'shell_command':
             return 'Agent wants permission to run a shell command.';
         case 'continue_after_limit':
@@ -179,9 +175,6 @@ function getApprovalTitle(approvalKind: PlanApprovalKind | undefined): string {
     switch (approvalKind) {
         case 'exit_plan_mode':
             return 'Plan Approval';
-        case 'web_search':
-        case 'web_fetch':
-            return 'Web Access Approval';
         case 'shell_command':
             return 'Shell Access Approval';
         case 'continue_after_limit':
@@ -392,8 +385,6 @@ const AIChatFooter: React.FC<AIChatFooterProps> = ({ isUsageExceeded = false }) 
 
     // Mode switcher state
     // Mode switcher is now a pill group (no dropdown menu needed)
-    // The web-search preapproval toggle now lives in SettingsPanel; we read its
-    // value fresh from localStorage at submit time (see readWebAccessPreapproved()).
 
     // Manual compact state
     const [isCompacting, setIsCompacting] = useState(false);
@@ -1264,7 +1255,6 @@ const AIChatFooter: React.FC<AIChatFooterProps> = ({ isUsageExceeded = false }) 
                 files,
                 images,
                 thinking: isThinkingEnabled,
-                webAccessPreapproved: readWebAccessPreapproved(),
                 chatHistory: chatHistory,
                 modelSettings,
             });

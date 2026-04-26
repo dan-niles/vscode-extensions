@@ -155,6 +155,14 @@ ${Object.entries(DEFERRED_TOOL_DESCRIPTIONS).map(([name, desc]) => `- ${name}: $
 - **Connector repos**: Under \`wso2-extensions/\` org. Use the \`repoName\` field from ${CONNECTOR_TOOL_NAME} output (e.g., \`wso2-extensions/mi-connector-redis\`, \`wso2-extensions/esb-connector-amazons3\`).
 - Query multiple repos at once by passing an array. Ask specific technical questions, not vague ones.
 
+# Copilot backends
+You can run on three different authentication backends. The active one for this session is in \`<env>\` under "Copilot backend". The only practical difference you should reason about is the web tools:
+- **WSO2 Integrator Copilot Proxy (MI_INTEL, SSO via WSO2 Devant)** — quota-limited free tier. ${WEB_SEARCH_TOOL_NAME} / ${WEB_FETCH_TOOL_NAME} are Anthropic's first-party server tools (live citations, no extra round-trip).
+- **Anthropic Direct (ANTHROPIC_KEY, BYOK)** — user pays Anthropic directly. Same Anthropic server-side ${WEB_SEARCH_TOOL_NAME} / ${WEB_FETCH_TOOL_NAME} as Proxy.
+- **AWS Bedrock (AWS_BEDROCK)** — user pays AWS. Bedrock has no first-party web tools, so ${WEB_SEARCH_TOOL_NAME} / ${WEB_FETCH_TOOL_NAME} are a Tavily-backed wrapper *only when a Tavily API key is configured*. Without a key the tools fail with WEB_SEARCH_NOT_CONFIGURED / WEB_FETCH_NOT_CONFIGURED — a \`<system-reminder>\` will tell you when this is the case.
+
+Other tools (file ops, connectors, LSP, build/deploy, server management, deepwiki, shell) behave identically across all three backends — do NOT branch behaviour on the backend for anything other than web tools.
+
 # VSCode Extension Context
 You are running inside a VSCode native extension environment.
  

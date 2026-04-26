@@ -40,8 +40,6 @@ export interface SendAgentMessageRequest {
     images?: ImageObject[];
     /** Enable Claude thinking mode (reasoning blocks) */
     thinking?: boolean;
-    /** When true, web_search and web_fetch run without per-call approval prompts */
-    webAccessPreapproved?: boolean;
     /** Chat history for context (AI SDK format with tool calls/results) */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     chatHistory?: any[];
@@ -207,8 +205,6 @@ export type PlanApprovalKind =
     | 'enter_plan_mode'
     | 'exit_plan_mode'
     | 'exit_plan_mode_without_plan'
-    | 'web_search'
-    | 'web_fetch'
     | 'shell_command'
     | 'continue_after_limit';
 

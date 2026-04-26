@@ -30,7 +30,7 @@ const NATIVE_COMPACTION_TRIGGER_TOKENS = 200000;
 
 import { ModelMessage, streamText, stepCountIs, UserModelMessage, SystemModelMessage, wrapLanguageModel } from 'ai';
 import { AnthropicProviderOptions } from '@ai-sdk/anthropic';
-import { getAnthropicClient, getAnthropicClientForCustomModel, AnthropicModel, resolveMainModelId } from '../../../connection';
+import { getAnthropicClient, getAnthropicClientForCustomModel, getAnthropicProvider, AnthropicModel, resolveMainModelId } from '../../../connection';
 import { getLoginMethod, getTavilyApiKey } from '../../../auth';
 import { getSystemPrompt } from '../main/system';
 import { getUserPrompt, UserPromptParams, UserPromptContentBlock } from './prompt';
@@ -69,6 +69,7 @@ import { getToolAction } from '../../tool-action-mapper';
 import { AgentUndoCheckpointManager } from '../../undo/checkpoint-manager';
 import { getCopilotSessionDir } from '../../storage-paths';
 import { ShellApprovalRuleStore } from '../../tools/types';
+import { WebToolsProvider } from '../../tools/web_tools';
 import {
     awaitWithTimeout,
     createProxyTerminatedError,
@@ -121,8 +122,6 @@ export interface AgentRequest {
     images?: ImageObject[];
     /** Enable Claude thinking mode (reasoning blocks) */
     thinking?: boolean;
-    /** Skip per-call web approval prompts when true */
-    webAccessPreapproved?: boolean;
     /** Path to the MI project */
     projectPath: string;
     /** Map of file path to content for relevant existing code (optional, for future use) */
@@ -461,11 +460,20 @@ export async function executeAgent(
             && (chatHistory[0] as any)?._compactSynthetic === true;
         const includeSessionContext = isFirstMessage || isPostCompaction;
 
-        // Bedrock has no first-party web tools — emit a one-shot reminder so the
-        // model doesn't keep retrying web_search/web_fetch when no Tavily key is set.
-        // Reuses the same one-shot semantics as the connector-catalog reminder.
-        const isBedrock = (await getLoginMethod()) === LoginMethod.AWS_BEDROCK;
-        const webSearchUnavailable = isBedrock && !(await getTavilyApiKey());
+        // Resolve the web-tool provider once for this turn.
+        // - Anthropic/Proxy paths get Anthropic's first-party server tools registered
+        //   directly on the main streamText call (no wrapper, no extra LLM round-trip).
+        // - Bedrock + Tavily key gets the Tavily-backed local tool.
+        // - Bedrock + no key omits the tools and relies on the `web_search_unavailable`
+        //   system reminder to steer the model away.
+        const loginMethod = await getLoginMethod();
+        const isBedrock = loginMethod === LoginMethod.AWS_BEDROCK;
+        const tavilyKey = isBedrock ? (await getTavilyApiKey()) : null;
+        const webSearchUnavailable = isBedrock && !tavilyKey;
+        const webToolsProvider: WebToolsProvider =
+            isBedrock ? (tavilyKey ? 'tavily-local' : 'none') : 'anthropic-server';
+        const anthropicProviderForWebTools =
+            webToolsProvider === 'anthropic-server' ? await getAnthropicProvider() : undefined;
 
         // Build user prompt
         const userPromptParams: UserPromptParams = {
@@ -477,6 +485,7 @@ export async function executeAgent(
             runtimeVersionDetected: systemPromptSelection.runtimeVersionDetected,
             includeSessionContext,
             webSearchUnavailable,
+            loginMethod,
         };
         const userPromptBlocks = await getUserPrompt(userPromptParams);
 
@@ -559,7 +568,9 @@ export async function executeAgent(
             pendingQuestions,
             pendingApprovals,
             getAnthropicClient,
-            webAccessPreapproved: request.webAccessPreapproved === true,
+            webToolsProvider,
+            anthropicProvider: anthropicProviderForWebTools,
+            tavilyApiKey: tavilyKey || undefined,
             shellApprovalRuleStore: request.shellApprovalRuleStore,
             undoCheckpointManager: request.undoCheckpointManager,
             abortSignal: streamWatchdog.abortSignal,
