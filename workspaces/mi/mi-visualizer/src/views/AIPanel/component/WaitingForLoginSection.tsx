@@ -244,6 +244,9 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
     const [bedrockAuthType, setBedrockAuthType] = useState<BedrockAuthType>("api_key");
     const [bedrockApiKey, setBedrockApiKey] = useState("");
     const [showBedrockApiKey, setShowBedrockApiKey] = useState(false);
+    // Optional Tavily key — if provided here, web_search/web_fetch will work on Bedrock.
+    const [tavilyApiKey, setTavilyApiKey] = useState("");
+    const [showTavilyApiKey, setShowTavilyApiKey] = useState(false);
     const [awsCredentials, setAwsCredentials] = useState({
         accessKeyId: "",
         secretAccessKey: "",
@@ -326,6 +329,8 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
             return;
         }
 
+        const trimmedTavilyKey = tavilyApiKey.trim() || undefined;
+
         if (bedrockAuthType === "api_key") {
             if (!bedrockApiKey.trim()) {
                 setClientError("Please enter your Amazon Bedrock API key");
@@ -338,6 +343,7 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
                     authType: "api_key",
                     apiKey: bedrockApiKey.trim(),
                     region: region.trim(),
+                    tavilyApiKey: trimmedTavilyKey,
                 },
             } as any);
             return;
@@ -359,7 +365,8 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
                 accessKeyId: accessKeyId.trim(),
                 secretAccessKey: secretAccessKey.trim(),
                 region: region.trim(),
-                sessionToken: sessionToken.trim() || undefined
+                sessionToken: sessionToken.trim() || undefined,
+                tavilyApiKey: trimmedTavilyKey,
             },
         } as any);
     };
@@ -569,6 +576,44 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
                             </InputContainer>
                         </>
                     )}
+
+                    {/* Optional Tavily key — Bedrock has no first-party web tools, so without
+                        this key the agent can't run web_search / web_fetch. Skippable; can be
+                        added later in Settings. */}
+                    <InputContainer>
+                        <InputRow>
+                            <StyledTextField
+                                type={showTavilyApiKey ? "text" : "password"}
+                                placeholder="Tavily API key (optional — enables web search)"
+                                value={tavilyApiKey}
+                                onChange={(e: any) => {
+                                    setTavilyApiKey(e.target?.value ?? '');
+                                    if (clientError) setClientError("");
+                                }}
+                                {...(isValidating ? { disabled: true } : {})}
+                            />
+                            <EyeButton
+                                type="button"
+                                onClick={() => setShowTavilyApiKey(!showTavilyApiKey)}
+                                title={showTavilyApiKey ? "Hide Tavily key" : "Show Tavily key"}
+                                {...(isValidating ? { disabled: true } : {})}
+                            >
+                                <Codicon name={showTavilyApiKey ? "eye-closed" : "eye"} />
+                            </EyeButton>
+                        </InputRow>
+                    </InputContainer>
+                    <HelperText>
+                        <a
+                            href="#"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                rpcClient.getMiVisualizerRpcClient().openExternal({ uri: "https://app.tavily.com" });
+                            }}
+                            style={{ color: "var(--vscode-textLink-foreground)" }}
+                        >
+                            Get a free Tavily API key
+                        </a>{" "}— required for web_search and web_fetch on AWS Bedrock. You can add or change it later in Settings.
+                    </HelperText>
 
                     {displayError && (
                         <ErrorMessage>

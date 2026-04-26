@@ -107,6 +107,12 @@ Available downloadable inbound artifact ids for this version of the MI runtime (
 Available bundled inbound ids (shipped with this version of the MI runtime — use the id directly with get_connector_info, do NOT add to pom.xml):
 {{available_bundled_inbound_ids}}
 </system-reminder>
+
+{{#if web_search_unavailable}}
+<system-reminder>
+Web search is not available in this environment because no Tavily API key is configured (AWS Bedrock has no first-party web tools). Do NOT call web_search or web_fetch — they will fail with WEB_SEARCH_NOT_CONFIGURED / WEB_FETCH_NOT_CONFIGURED. Override the system prompt's research-priority guidance: skip step (3) entirely. If the user asks for external/web information, tell them to add a Tavily API key in the AI Panel settings (Web Search section) to enable it. For Synapse/MI internals continue to use load_context_reference and deepwiki_ask_question as the system prompt instructs.
+</system-reminder>
+{{/if}}
 {{/if}}
 
 {{#if currentlyOpenedFile}}
@@ -183,6 +189,8 @@ export interface UserPromptParams {
     runtimeVersionDetected?: boolean;
     /** Include session context (env, connectors) — true for first message or after compaction, false otherwise */
     includeSessionContext?: boolean;
+    /** True when the active provider can't run web_search/web_fetch (e.g. Bedrock without a Tavily key). */
+    webSearchUnavailable?: boolean;
 }
 
 // ============================================================================
@@ -413,6 +421,7 @@ export async function getUserPrompt(params: UserPromptParams): Promise<UserPromp
         userPreconfigured: params.payloads, // Pre-configured payloads (optional)
         payloads: params.payloads, // Backward-compatible template key
         include_session_context: params.includeSessionContext ?? true,
+        web_search_unavailable: params.webSearchUnavailable === true,
         available_connector_artifact_ids: availableConnectorArtifactIds.join(', '),
         available_inbound_artifact_ids: availableInboundArtifactIds.join(', '),
         available_bundled_inbound_ids: availableBundledInboundIds.join(', '),

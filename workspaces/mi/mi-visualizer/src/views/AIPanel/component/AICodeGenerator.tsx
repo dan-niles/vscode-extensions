@@ -41,6 +41,9 @@ export function AICodeGenerator({ isUsageExceeded = false }: AICodeGeneratorProp
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [isByok, setIsByok] = useState(false);
+  // Bedrock specifically — used by SettingsPanel to gate the Tavily/web-search controls.
+  // Distinct from isByok (which is true for any "pays-per-request" auth method).
+  const [isAwsBedrock, setIsAwsBedrock] = useState(false);
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -52,13 +55,16 @@ export function AICodeGenerator({ isUsageExceeded = false }: AICodeGeneratorProp
   // Check BYOK status for settings panel
   useEffect(() => {
       const checkByok = async () => {
-          const hasApiKey = await rpcClient?.getMiAiPanelRpcClient().hasAnthropicApiKey();
-          if (hasApiKey) {
-              setIsByok(true);
-          } else {
-              const machineView = await rpcClient?.getAIVisualizerState();
-              setIsByok(machineView?.loginMethod === LoginMethod.AWS_BEDROCK);
+          if (!rpcClient) {
+              return;
           }
+          const [hasApiKey, machineView] = await Promise.all([
+              rpcClient.getMiAiPanelRpcClient().hasAnthropicApiKey(),
+              rpcClient.getAIVisualizerState(),
+          ]);
+          const isBedrock = machineView?.loginMethod === LoginMethod.AWS_BEDROCK;
+          setIsByok(!!hasApiKey || isBedrock);
+          setIsAwsBedrock(isBedrock);
       };
       checkByok();
   }, [rpcClient]);
@@ -164,7 +170,7 @@ export function AICodeGenerator({ isUsageExceeded = false }: AICodeGeneratorProp
   if (showSettings) {
       return (
           <AIChatView>
-              <SettingsPanel onClose={() => setShowSettings(false)} isByok={isByok} />
+              <SettingsPanel onClose={() => setShowSettings(false)} isByok={isByok} isAwsBedrock={isAwsBedrock} />
           </AIChatView>
       );
   }

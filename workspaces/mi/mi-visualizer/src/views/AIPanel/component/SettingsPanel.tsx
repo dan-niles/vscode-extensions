@@ -16,15 +16,27 @@
  * under the License.
  */
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Codicon } from "@wso2/ui-toolkit";
 import { useMICopilotContext } from "./MICopilotContext";
+import { readWebAccessPreapproved, writeWebAccessPreapproved } from "../utils";
 import type { MainModelPreset, SubModelPreset } from "@wso2/mi-rpc-client/src/rpc-clients/agent-mode/rpc-client";
 
 interface SettingsPanelProps {
     onClose: () => void;
+    /**
+     * True when the user pays per-request — own Anthropic key OR AWS Bedrock.
+     * Used for cost-vs-quota copy in the high-intelligence warning and sign-out blurb.
+     */
     isByok: boolean;
+    /**
+     * True only for AWS Bedrock auth. Gates the Tavily / web-search controls
+     * since Bedrock has no first-party web tools.
+     */
+    isAwsBedrock: boolean;
 }
+
+const TAVILY_SIGNUP_URL = 'https://app.tavily.com';
 
 const MAIN_AGENT_OPTIONS: { value: MainModelPreset; label: string; model: string; description: string }[] = [
     { value: "sonnet", label: "Normal", model: "Claude Sonnet 4.6", description: "Balanced quality, speed, and quota usage for everyday requests." },
@@ -39,7 +51,7 @@ const SUB_AGENT_OPTIONS: { value: SubModelPreset; label: string; model: string; 
 const DEFAULT_MAIN: MainModelPreset = "sonnet";
 const DEFAULT_SUB: SubModelPreset = "haiku";
 
-const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok }) => {
+const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBedrock }) => {
     const {
         rpcClient,
         modelSettings,
@@ -62,6 +74,125 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok }) => {
         });
         setIsThinkingEnabled(false);
     };
+
+    // ----- Web Search settings -----
+    // Approval-skip toggle (used by both Anthropic-direct and Bedrock paths).
+    const [isApprovalSkipEnabled, setIsApprovalSkipEnabled] = useState<boolean>(readWebAccessPreapproved());
+
+    // Tavily key state (Bedrock-only). Loaded once on mount; saved on demand.
+    // On Bedrock, the presence of a saved Tavily key IS the "web search enabled" signal.
+    const [tavilyKey, setTavilyKey] = useState<string>("");
+    const [tavilyDraft, setTavilyDraft] = useState<string>("");
+    const [showTavilyKey, setShowTavilyKey] = useState<boolean>(false);
+    // True when the user has just toggled the enable switch ON but hasn't saved a key yet.
+    const [tavilyInputOpen, setTavilyInputOpen] = useState<boolean>(false);
+    const [tavilyStatus, setTavilyStatus] = useState<{ kind: 'idle' | 'saving' | 'saved' | 'error'; message?: string }>({ kind: 'idle' });
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!isAwsBedrock || !rpcClient) {
+            return;
+        }
+        (async () => {
+            try {
+                const stored = await rpcClient.getMiAiPanelRpcClient().getTavilyApiKey();
+                if (cancelled) {
+                    return;
+                }
+                const value = stored ?? "";
+                setTavilyKey(value);
+                setTavilyDraft(value);
+            } catch {
+                // Failure to load is non-fatal — user can re-enter the key.
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [isAwsBedrock, rpcClient]);
+
+    const handleApprovalSkipToggle = (enabled: boolean) => {
+        setIsApprovalSkipEnabled(enabled);
+        writeWebAccessPreapproved(enabled);
+    };
+
+    /**
+     * Bedrock-only: enable/disable the entire web-search capability.
+     * Toggling ON without a saved key shows the Tavily input.
+     * Toggling OFF clears the saved key.
+     */
+    const handleBedrockWebSearchToggle = async (enabled: boolean) => {
+        if (!rpcClient) {
+            return;
+        }
+        if (enabled) {
+            // Reveal input. If a key is already saved we keep it — the toggle simply
+            // reflects the existing enabled state. If not, the user needs to enter one.
+            setTavilyInputOpen(true);
+            if (!tavilyKey) {
+                setTavilyDraft("");
+                setTavilyStatus({ kind: 'idle' });
+            }
+            return;
+        }
+        // Disabling: drop the saved key (and the approval-skip pref, which becomes meaningless).
+        setTavilyInputOpen(false);
+        setTavilyDraft("");
+        setTavilyStatus({ kind: 'saving' });
+        try {
+            const response = await rpcClient.getMiAiPanelRpcClient().setTavilyApiKey({ apiKey: '' });
+            if (response.success) {
+                setTavilyKey("");
+                setTavilyStatus({ kind: 'saved', message: 'Web search disabled.' });
+                if (isApprovalSkipEnabled) {
+                    setIsApprovalSkipEnabled(false);
+                    writeWebAccessPreapproved(false);
+                }
+            } else {
+                setTavilyStatus({ kind: 'error', message: response.error || 'Failed to disable web search.' });
+            }
+        } catch (err) {
+            setTavilyStatus({ kind: 'error', message: err instanceof Error ? err.message : String(err) });
+        }
+    };
+
+    const handleTavilySave = async () => {
+        if (!rpcClient) {
+            return;
+        }
+        const trimmed = tavilyDraft.trim();
+        if (!trimmed) {
+            setTavilyStatus({ kind: 'error', message: 'Enter a Tavily API key or toggle web search off to disable it.' });
+            return;
+        }
+        setTavilyStatus({ kind: 'saving' });
+        try {
+            const response = await rpcClient.getMiAiPanelRpcClient().setTavilyApiKey({ apiKey: trimmed });
+            if (response.success) {
+                setTavilyKey(trimmed);
+                setTavilyInputOpen(false);
+                setTavilyStatus({ kind: 'saved', message: 'Tavily key saved.' });
+            } else {
+                setTavilyStatus({ kind: 'error', message: response.error || 'Failed to save Tavily key.' });
+            }
+        } catch (err) {
+            setTavilyStatus({ kind: 'error', message: err instanceof Error ? err.message : String(err) });
+        }
+    };
+
+    const handleEditTavilyKey = () => {
+        setTavilyDraft(tavilyKey);
+        setTavilyInputOpen(true);
+        setTavilyStatus({ kind: 'idle' });
+    };
+
+    const handleOpenTavilySignup = () => {
+        rpcClient?.getMiVisualizerRpcClient().openExternal({ uri: TAVILY_SIGNUP_URL });
+    };
+
+    const tavilyDirty = tavilyDraft.trim() !== tavilyKey.trim();
+    // Bedrock: web search is "enabled" when a key is saved or the user is in the middle of entering one.
+    const isBedrockWebSearchOn = !!tavilyKey || tavilyInputOpen;
 
     const isDefault =
         modelSettings.mainModelPreset === DEFAULT_MAIN &&
@@ -176,6 +307,177 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok }) => {
                             variant="warning"
                             text="Copilot may overthink simple tasks, increasing latency and cost. WSO2 recommends keeping thinking off for most use cases."
                         />
+                    )}
+                </SettingsSection>
+
+                {/* Web Search */}
+                <SettingsSection title="Web Search">
+                    {isAwsBedrock ? (
+                        <>
+                            {/* Bedrock: enable toggle (gated on Tavily key) + approval toggle. */}
+                            <div className="flex items-center justify-between">
+                                <div className="pr-3">
+                                    <p className="text-[13px]" style={{ color: "var(--vscode-foreground)" }}>
+                                        Enable web search
+                                    </p>
+                                    <p className="text-[11px] mt-0.5" style={{ color: "var(--vscode-descriptionForeground)" }}>
+                                        AWS Bedrock has no built-in web tools. Provide a Tavily API key to enable web_search and web_fetch.
+                                    </p>
+                                </div>
+                                <ToggleGroup
+                                    options={["Off", "On"]}
+                                    selected={isBedrockWebSearchOn ? "On" : "Off"}
+                                    onSelect={(label) => handleBedrockWebSearchToggle(label === "On")}
+                                    compact
+                                />
+                            </div>
+
+                            {tavilyInputOpen && (
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type={showTavilyKey ? "text" : "password"}
+                                            value={tavilyDraft}
+                                            onChange={(e) => {
+                                                setTavilyDraft(e.target.value);
+                                                if (tavilyStatus.kind !== 'idle') {
+                                                    setTavilyStatus({ kind: 'idle' });
+                                                }
+                                            }}
+                                            placeholder="tvly-..."
+                                            className="flex-1 px-2 py-1 text-[12px] rounded-md"
+                                            style={{
+                                                backgroundColor: "var(--vscode-input-background)",
+                                                color: "var(--vscode-input-foreground)",
+                                                border: "1px solid var(--vscode-input-border)",
+                                                outline: "none",
+                                            }}
+                                            spellCheck={false}
+                                            autoComplete="off"
+                                            autoFocus
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowTavilyKey((v) => !v)}
+                                            className="flex items-center justify-center w-7 h-7 rounded-md"
+                                            style={{
+                                                background: "transparent",
+                                                color: "var(--vscode-descriptionForeground)",
+                                                border: "1px solid transparent",
+                                                cursor: "pointer",
+                                            }}
+                                            aria-label={showTavilyKey ? "Hide key" : "Show key"}
+                                            title={showTavilyKey ? "Hide key" : "Show key"}
+                                        >
+                                            <Codicon name={showTavilyKey ? "eye-closed" : "eye"} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleTavilySave}
+                                            disabled={!tavilyDirty || tavilyStatus.kind === 'saving' || !tavilyDraft.trim()}
+                                            className="px-3 py-1 rounded-md text-xs font-medium transition-colors"
+                                            style={{
+                                                backgroundColor: tavilyDirty && tavilyDraft.trim() ? "var(--vscode-button-background)" : "var(--vscode-button-secondaryBackground)",
+                                                color: tavilyDirty && tavilyDraft.trim() ? "var(--vscode-button-foreground)" : "var(--vscode-button-secondaryForeground)",
+                                                border: "none",
+                                                cursor: tavilyDirty && tavilyDraft.trim() && tavilyStatus.kind !== 'saving' ? "pointer" : "not-allowed",
+                                                opacity: tavilyDirty && tavilyDraft.trim() ? 1 : 0.6,
+                                            }}
+                                        >
+                                            {tavilyStatus.kind === 'saving' ? 'Saving…' : 'Save'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {!tavilyInputOpen && tavilyKey && (
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[11px]" style={{ color: "var(--vscode-descriptionForeground)" }}>
+                                        Tavily key saved.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={handleEditTavilyKey}
+                                        className="text-[11px] inline-flex items-center gap-1 transition-colors"
+                                        style={{
+                                            color: "var(--vscode-textLink-foreground)",
+                                            background: "transparent",
+                                            border: "none",
+                                            padding: 0,
+                                            cursor: "pointer",
+                                        }}
+                                    >
+                                        <Codicon name="edit" />
+                                        Edit key
+                                    </button>
+                                </div>
+                            )}
+
+                            {tavilyStatus.kind === 'saved' && (
+                                <p className="text-[11px]" style={{ color: "var(--vscode-descriptionForeground)" }}>
+                                    {tavilyStatus.message}
+                                </p>
+                            )}
+                            {tavilyStatus.kind === 'error' && (
+                                <p className="text-[11px]" style={{ color: "var(--vscode-errorForeground)" }}>
+                                    {tavilyStatus.message}
+                                </p>
+                            )}
+
+                            <button
+                                type="button"
+                                onClick={handleOpenTavilySignup}
+                                className="text-[11px] inline-flex items-center gap-1 transition-colors"
+                                style={{
+                                    color: "var(--vscode-textLink-foreground)",
+                                    background: "transparent",
+                                    border: "none",
+                                    padding: 0,
+                                    cursor: "pointer",
+                                }}
+                            >
+                                <Codicon name="link-external" />
+                                Get a free Tavily API key
+                            </button>
+
+                            {/* Approval-skip toggle: only meaningful when web search is enabled. */}
+                            {isBedrockWebSearchOn && (
+                                <div className="flex items-center justify-between mt-3 pt-3" style={{ borderTop: "1px solid var(--vscode-panel-border)" }}>
+                                    <div className="pr-3">
+                                        <p className="text-[13px]" style={{ color: "var(--vscode-foreground)" }}>
+                                            Skip approval prompts
+                                        </p>
+                                        <p className="text-[11px] mt-0.5" style={{ color: "var(--vscode-descriptionForeground)" }}>
+                                            When on, web search and fetch run without per-call approval. When off, you'll be asked before each web request.
+                                        </p>
+                                    </div>
+                                    <ToggleGroup
+                                        options={["Off", "On"]}
+                                        selected={isApprovalSkipEnabled ? "On" : "Off"}
+                                        onSelect={(label) => handleApprovalSkipToggle(label === "On")}
+                                        compact
+                                    />
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        // Anthropic / Proxy: web search is always available; only the approval toggle.
+                        <div className="flex items-center justify-between">
+                            <div className="pr-3">
+                                <p className="text-[13px]" style={{ color: "var(--vscode-foreground)" }}>
+                                    Skip approval prompts
+                                </p>
+                                <p className="text-[11px] mt-0.5" style={{ color: "var(--vscode-descriptionForeground)" }}>
+                                    When on, web search and fetch run without per-call approval. When off, you'll be asked before each web request.
+                                </p>
+                            </div>
+                            <ToggleGroup
+                                options={["Off", "On"]}
+                                selected={isApprovalSkipEnabled ? "On" : "Off"}
+                                onSelect={(label) => handleApprovalSkipToggle(label === "On")}
+                                compact
+                            />
+                        </div>
                     )}
                 </SettingsSection>
 

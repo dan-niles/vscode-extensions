@@ -31,7 +31,7 @@ const NATIVE_COMPACTION_TRIGGER_TOKENS = 200000;
 import { ModelMessage, streamText, stepCountIs, UserModelMessage, SystemModelMessage, wrapLanguageModel } from 'ai';
 import { AnthropicProviderOptions } from '@ai-sdk/anthropic';
 import { getAnthropicClient, getAnthropicClientForCustomModel, AnthropicModel, resolveMainModelId } from '../../../connection';
-import { getLoginMethod } from '../../../auth';
+import { getLoginMethod, getTavilyApiKey } from '../../../auth';
 import { getSystemPrompt } from '../main/system';
 import { getUserPrompt, UserPromptParams, UserPromptContentBlock } from './prompt';
 import { addCacheControlToMessages } from '../../../cache-utils';
@@ -461,6 +461,12 @@ export async function executeAgent(
             && (chatHistory[0] as any)?._compactSynthetic === true;
         const includeSessionContext = isFirstMessage || isPostCompaction;
 
+        // Bedrock has no first-party web tools — emit a one-shot reminder so the
+        // model doesn't keep retrying web_search/web_fetch when no Tavily key is set.
+        // Reuses the same one-shot semantics as the connector-catalog reminder.
+        const isBedrock = (await getLoginMethod()) === LoginMethod.AWS_BEDROCK;
+        const webSearchUnavailable = isBedrock && !(await getTavilyApiKey());
+
         // Build user prompt
         const userPromptParams: UserPromptParams = {
             query: request.query,
@@ -470,6 +476,7 @@ export async function executeAgent(
             runtimeVersion,
             runtimeVersionDetected: systemPromptSelection.runtimeVersionDetected,
             includeSessionContext,
+            webSearchUnavailable,
         };
         const userPromptBlocks = await getUserPrompt(userPromptParams);
 
@@ -656,12 +663,10 @@ export async function executeAgent(
             };
         }
 
-        // Build beta headers: include compaction beta when native compaction is enabled.
         // Bedrock InvokeModel rejects `defer_loading` on `type: "custom"` tools unless the
         // tool-search beta is set (the SDK auto-adds it only when a server-side tool_search
         // tool is in the tools array, which we don't use). On direct Anthropic the header is
         // a no-op for custom-tool defer_loading, so we add it unconditionally on Bedrock.
-        const isBedrock = (await getLoginMethod()) === LoginMethod.AWS_BEDROCK;
         const betaHeaders = [
             ...(request.thinking ? ['interleaved-thinking-2025-05-14'] : []),
             ...(ENABLE_NATIVE_COMPACTION ? ['compact-2026-01-12'] : []),

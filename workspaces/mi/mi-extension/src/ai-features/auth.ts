@@ -579,6 +579,8 @@ interface AwsBedrockValidationInput {
     region?: string;
     sessionToken?: string;
     apiKey?: string;
+    /** Optional Tavily key bundled with Bedrock credentials so users can opt into web tools. */
+    tavilyApiKey?: string;
 }
 
 const validateBedrockRegion = (region: string): void => {
@@ -602,6 +604,7 @@ const getBedrockValidationModelId = async (region: string): Promise<string> => {
 export const validateAwsCredentials = async (credentials: AwsBedrockValidationInput): Promise<AIUserToken> => {
     const authType = credentials.authType === 'api_key' ? 'api_key' : 'iam';
     const region = credentials.region?.trim() ?? '';
+    const tavilyApiKey = credentials.tavilyApiKey?.trim() || undefined;
 
     validateBedrockRegion(region);
 
@@ -632,6 +635,7 @@ export const validateAwsCredentials = async (credentials: AwsBedrockValidationIn
                     authType: 'api_key',
                     apiKey,
                     region,
+                    tavilyApiKey,
                 }
             };
             await storeAuthCredentials(authCredentials);
@@ -677,7 +681,8 @@ export const validateAwsCredentials = async (credentials: AwsBedrockValidationIn
                 accessKeyId,
                 secretAccessKey,
                 region,
-                sessionToken
+                sessionToken,
+                tavilyApiKey,
             }
         };
         await storeAuthCredentials(authCredentials);
@@ -701,6 +706,37 @@ export const getAwsBedrockCredentials = async (): Promise<AwsBedrockSecrets | un
         return undefined;
     }
     return credentials.secrets;
+};
+
+/**
+ * Read the Tavily API key bundled with Bedrock credentials, if any.
+ * Returns undefined for non-Bedrock auth methods or when the key is unset.
+ */
+export const getTavilyApiKey = async (): Promise<string | undefined> => {
+    const secrets = await getAwsBedrockCredentials();
+    return secrets?.tavilyApiKey?.trim() || undefined;
+};
+
+/**
+ * Update the Tavily API key on the stored Bedrock credentials.
+ * Pass undefined or empty string to clear it.
+ *
+ * Throws if no Bedrock credentials are stored — Tavily is currently a Bedrock-only opt-in.
+ */
+export const setTavilyApiKey = async (apiKey: string | undefined): Promise<void> => {
+    const credentials = await getAuthCredentials();
+    if (!credentials || credentials.loginMethod !== LoginMethod.AWS_BEDROCK) {
+        throw new Error('Tavily API key is only configurable when signed in via AWS Bedrock.');
+    }
+    const trimmed = apiKey?.trim() || undefined;
+    const updated: AuthCredentials = {
+        loginMethod: LoginMethod.AWS_BEDROCK,
+        secrets: {
+            ...credentials.secrets,
+            tavilyApiKey: trimmed,
+        } as AwsBedrockSecrets,
+    };
+    await storeAuthCredentials(updated);
 };
 
 /**

@@ -158,10 +158,12 @@ export type AIMachineEventMap = {
         secretAccessKey?: string;
         region: string;
         sessionToken?: string;
+        tavilyApiKey?: string;
     } | {
         authType: 'api_key';
         apiKey: string;
         region: string;
+        tavilyApiKey?: string;
     };
     [AI_EVENT_TYPE.SIGN_IN_SUCCESS]: undefined;
     [AI_EVENT_TYPE.LOGOUT]: undefined;
@@ -209,12 +211,16 @@ export interface AwsBedrockIamSecrets {
     secretAccessKey: string;
     region: string;
     sessionToken?: string;
+    /** Optional Tavily API key for web search/fetch on Bedrock (Bedrock has no first-party web tools). */
+    tavilyApiKey?: string;
 }
 
 export interface AwsBedrockApiKeySecrets {
     authType: 'api_key';
     apiKey: string;
     region: string;
+    /** Optional Tavily API key for web search/fetch on Bedrock (Bedrock has no first-party web tools). */
+    tavilyApiKey?: string;
 }
 
 export type AwsBedrockSecrets = AwsBedrockIamSecrets | AwsBedrockApiKeySecrets;

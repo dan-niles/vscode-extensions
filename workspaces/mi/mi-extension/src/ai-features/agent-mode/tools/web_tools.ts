@@ -19,9 +19,11 @@
 import { tool, generateText } from 'ai';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import { AgentEvent } from '@wso2/mi-core';
+import { tavily as createTavilyClient } from '@tavily/core';
+import { AgentEvent, LoginMethod } from '@wso2/mi-core';
 import { logError, logInfo } from '../../copilot/logger';
 import { ANTHROPIC_SONNET_4_6, AnthropicModel, getAnthropicProvider, getAnthropicClientForCustomModel } from '../../connection';
+import { getLoginMethod, getTavilyApiKey } from '../../auth';
 import { PendingPlanApproval } from './plan_mode_tools';
 import {
     ToolResult,
@@ -63,6 +65,133 @@ function extractToolOutput(result: any): unknown {
     }
 
     return undefined;
+}
+
+type BedrockTavilyGate =
+    | { isBedrock: false }
+    | { isBedrock: true; tavilyKey: string }
+    | { isBedrock: true; tavilyKey: null; notConfigured: ToolResult };
+
+/**
+ * Returns the resolved Tavily availability for Bedrock auth, or a ready-to-return
+ * NOT_CONFIGURED ToolResult that the caller can short-circuit with. For non-Bedrock
+ * auth, just signals `isBedrock: false` and the caller proceeds with Anthropic.
+ */
+async function resolveBedrockTavilyGate(toolKind: 'search' | 'fetch'): Promise<BedrockTavilyGate> {
+    const isBedrock = (await getLoginMethod()) === LoginMethod.AWS_BEDROCK;
+    if (!isBedrock) {
+        return { isBedrock: false };
+    }
+    const tavilyKey = await getTavilyApiKey();
+    if (tavilyKey) {
+        return { isBedrock: true, tavilyKey };
+    }
+    const isSearch = toolKind === 'search';
+    return {
+        isBedrock: true,
+        tavilyKey: null,
+        notConfigured: {
+            success: false,
+            message: `Web ${isSearch ? 'search' : 'fetch'} is not configured. Add a Tavily API key in the AI Panel settings (Web Search section) to enable web ${isSearch ? 'search' : 'fetch'} on AWS Bedrock.`,
+            error: isSearch ? 'WEB_SEARCH_NOT_CONFIGURED' : 'WEB_FETCH_NOT_CONFIGURED',
+        },
+    };
+}
+
+/**
+ * Format a Tavily search response as a concise markdown summary suitable for the agent.
+ * Mirrors the shape (`success/message`) that the Anthropic-backed path returns so
+ * downstream code (chat-history persistence, UI rendering) doesn't need to branch.
+ *
+ * Uses `@tavily/core` directly (the AI SDK wrapper `@tavily/ai-sdk` is ESM-only and
+ * doesn't resolve under our CJS webpack config).
+ */
+async function runTavilySearch(
+    apiKey: string,
+    params: { query: string; includeDomains?: string[]; excludeDomains?: string[] }
+): Promise<ToolResult> {
+    try {
+        const client = createTavilyClient({ apiKey });
+        const response = await client.search(params.query, {
+            includeAnswer: true,
+            maxResults: 5,
+            ...(params.includeDomains ? { includeDomains: params.includeDomains } : {}),
+            ...(params.excludeDomains ? { excludeDomains: params.excludeDomains } : {}),
+        });
+
+        const lines: string[] = [];
+        if (typeof response?.answer === 'string' && response.answer.trim()) {
+            lines.push(`Answer: ${response.answer.trim()}`);
+        }
+        const results = Array.isArray(response?.results) ? response.results : [];
+        if (results.length > 0) {
+            lines.push('', 'Results:');
+            for (const r of results) {
+                const title = r?.title || r?.url || 'Untitled';
+                const url = r?.url || '';
+                const snippet = (r?.content || '').toString().trim();
+                lines.push(`- ${title}${url ? ` (${url})` : ''}${snippet ? `\n  ${snippet}` : ''}`);
+            }
+        }
+
+        const message = lines.length > 0
+            ? lines.join('\n')
+            : 'Tavily search returned no results.';
+        return { success: true, message };
+    } catch (error: any) {
+        logError('[WebSearchTool] Tavily search failed', error);
+        return {
+            success: false,
+            message: `Web search failed: ${error?.message || String(error)}`,
+            error: 'WEB_SEARCH_FAILED',
+        };
+    }
+}
+
+/**
+ * Fetch a single URL via Tavily Extract and format the result similarly.
+ */
+async function runTavilyExtract(apiKey: string, url: string, taskPrompt?: string): Promise<ToolResult> {
+    try {
+        const client = createTavilyClient({ apiKey });
+        const response = await client.extract([url], {
+            extractDepth: 'advanced',
+            format: 'markdown',
+        });
+
+        const failed = Array.isArray(response?.failedResults) ? response.failedResults : [];
+        if (failed.length > 0) {
+            const detail = failed.map((f) => `${f?.url}: ${f?.error}`).join('; ');
+            return {
+                success: false,
+                message: `Tavily extract failed: ${detail}`,
+                error: 'WEB_FETCH_FAILED',
+            };
+        }
+
+        const results = Array.isArray(response?.results) ? response.results : [];
+        const first = results[0];
+        if (!first?.rawContent) {
+            return {
+                success: false,
+                message: `Tavily extract returned no content for ${url}.`,
+                error: 'WEB_FETCH_EMPTY',
+            };
+        }
+
+        const header = taskPrompt ? `Task: ${taskPrompt}\nURL: ${url}\n\n` : `URL: ${url}\n\n`;
+        return {
+            success: true,
+            message: `${header}${first.rawContent}`,
+        };
+    } catch (error: any) {
+        logError('[WebFetchTool] Tavily extract failed', error);
+        return {
+            success: false,
+            message: `Web fetch failed: ${error?.message || String(error)}`,
+            error: 'WEB_FETCH_FAILED',
+        };
+    }
 }
 
 function getProviderToolFactory(provider: any, candidateNames: string[]): ((args: any) => any) | null {
@@ -161,6 +290,13 @@ export function createWebSearchExecute(
         const allowedDomains = sanitizeDomainList(args.allowed_domains);
         const blockedDomains = sanitizeDomainList(args.blocked_domains);
 
+        // Bedrock has no first-party web tools — bail before bothering the user
+        // with an approval modal we can't honor.
+        const gate = await resolveBedrockTavilyGate('search');
+        if (gate.isBedrock && gate.tavilyKey === null) {
+            return gate.notConfigured;
+        }
+
         let approved = true;
         if (!webAccessPreapproved) {
             approved = await requestWebApproval(eventHandler, pendingApprovals, {
@@ -180,7 +316,16 @@ export function createWebSearchExecute(
         }
 
         try {
-            logInfo(`[WebSearchTool] Running query: ${args.query}`);
+            logInfo(`[WebSearchTool] Running query: ${args.query} (provider=${gate.isBedrock ? 'tavily' : 'anthropic'})`);
+
+            if (gate.isBedrock) {
+                return await runTavilySearch(gate.tavilyKey, {
+                    query: args.query,
+                    includeDomains: allowedDomains,
+                    excludeDomains: blockedDomains,
+                });
+            }
+
             const anthropicProvider = await getAnthropicProvider();
             const searchFactory = getProviderToolFactory(anthropicProvider as any, ['webSearch_20250305']);
 
@@ -269,6 +414,11 @@ export function createWebFetchExecute(
         const allowedDomains = sanitizeDomainList(args.allowed_domains);
         const blockedDomains = sanitizeDomainList(args.blocked_domains);
 
+        const gate = await resolveBedrockTavilyGate('fetch');
+        if (gate.isBedrock && gate.tavilyKey === null) {
+            return gate.notConfigured;
+        }
+
         let approved = true;
         if (!webAccessPreapproved) {
             approved = await requestWebApproval(eventHandler, pendingApprovals, {
@@ -285,6 +435,11 @@ export function createWebFetchExecute(
                 message: 'User denied permission to fetch web content.',
                 error: 'WEB_FETCH_DENIED',
             };
+        }
+
+        if (gate.isBedrock) {
+            logInfo(`[WebFetchTool] Tavily extract: ${args.url}`);
+            return await runTavilyExtract(gate.tavilyKey, args.url, args.prompt);
         }
 
         try {

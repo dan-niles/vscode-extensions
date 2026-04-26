@@ -717,3 +717,27 @@ export function convertChatHistoryToModelMessages(chatHistory: CopilotChatEntry[
 
     return messages;
 }
+
+/**
+ * Persisted preference: when true, web_search and web_fetch tool calls run
+ * without per-call user approval. Stored in localStorage so it survives reloads.
+ *
+ * Owned by SettingsPanel (writes); consumed by AIChatFooter at submit time.
+ */
+export const WEB_ACCESS_PREFERENCE_KEY = 'mi-agent-web-access-enabled';
+
+export function readWebAccessPreapproved(): boolean {
+    try {
+        return localStorage.getItem(WEB_ACCESS_PREFERENCE_KEY) === 'true';
+    } catch {
+        return false;
+    }
+}
+
+export function writeWebAccessPreapproved(value: boolean): void {
+    try {
+        localStorage.setItem(WEB_ACCESS_PREFERENCE_KEY, String(value));
+    } catch {
+        // ignore restricted-environment failures
+    }
+}
