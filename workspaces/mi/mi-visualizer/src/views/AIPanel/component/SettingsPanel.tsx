@@ -39,7 +39,7 @@ const TAVILY_SIGNUP_URL = 'https://app.tavily.com';
 
 const MAIN_AGENT_OPTIONS: { value: MainModelPreset; label: string; model: string; description: string }[] = [
     { value: "sonnet", label: "Normal", model: "Claude Sonnet 4.6", description: "Balanced quality, speed, and quota usage for everyday requests." },
-    { value: "opus", label: "High", model: "Claude Opus 4.6", description: "Maximum reasoning capability for complex tasks. Higher quota usage." },
+    { value: "opus", label: "High", model: "Claude Opus 4.7", description: "Maximum reasoning capability for complex tasks. Higher quota usage." },
 ];
 
 const SUB_AGENT_OPTIONS: { value: SubModelPreset; label: string; model: string; description: string }[] = [

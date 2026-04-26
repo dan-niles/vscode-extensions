@@ -302,7 +302,7 @@ const MAIN_PRESET_INFO: Record<MainModelPreset, PresetInfo> = {
     },
     opus: {
         description: 'Best for harder reasoning tasks, with higher latency and cost.',
-        modelName: 'Claude Opus 4.6',
+        modelName: 'Claude Opus 4.7',
     },
 };
 
