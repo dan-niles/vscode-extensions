@@ -15,7 +15,7 @@
 // under the License.
 
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
+import { createBedrockAnthropic } from "@ai-sdk/amazon-bedrock/anthropic";
 import * as vscode from "vscode";
 import {
     getAccessToken,
@@ -73,7 +73,7 @@ export const getBedrockValidationModelId = (region: string): string => {
 };
 
 let cachedAnthropic: ReturnType<typeof createAnthropic> | null = null;
-let cachedBedrock: ReturnType<typeof createAmazonBedrock> | null = null;
+let cachedBedrock: ReturnType<typeof createBedrockAnthropic> | null = null;
 let cachedAuthMethod: LoginMethod | null = null;
 let reLoginPromptInFlight = false;
 
@@ -303,9 +303,14 @@ export const getAnthropicProvider = async (): Promise<ReturnType<typeof createAn
 
 /**
  * Get or create a cached Bedrock provider instance.
+ *
+ * Uses the `@ai-sdk/amazon-bedrock/anthropic` subpath, which calls Bedrock's
+ * InvokeModel API rather than Converse. This gives us full Anthropic feature
+ * parity (native compaction, deferLoading, anthropic-beta headers, adaptive
+ * thinking, ttl-based cache control) — none of which work through Converse.
  */
 const getBedrockProvider = async (): Promise<{
-    provider: ReturnType<typeof createAmazonBedrock>;
+    provider: ReturnType<typeof createBedrockAnthropic>;
     credentials: Awaited<ReturnType<typeof getAwsBedrockCredentials>> & {};
 }> => {
     const credentials = await getAwsBedrockCredentials();
@@ -315,11 +320,11 @@ const getBedrockProvider = async (): Promise<{
 
     // Always recreate to ensure fresh credentials
     cachedBedrock = credentials.authType === 'api_key'
-        ? createAmazonBedrock({
+        ? createBedrockAnthropic({
             region: credentials.region,
             apiKey: credentials.apiKey,
         })
-        : createAmazonBedrock({
+        : createBedrockAnthropic({
             region: credentials.region,
             accessKeyId: credentials.accessKeyId,
             secretAccessKey: credentials.secretAccessKey,
@@ -382,13 +387,12 @@ export function resolveSubModelId(settings: { subModelPreset: string; subModelCu
 }
 
 /**
- * Returns cache control options for prompt caching
- * @returns Cache control options for Anthropic or Bedrock
+ * Returns cache control options for prompt caching.
+ *
+ * Both the direct Anthropic provider and the Bedrock-Anthropic provider
+ * (`@ai-sdk/amazon-bedrock/anthropic`) speak the Anthropic protocol under the
+ * hood, so the providerOptions key is always `anthropic` — even on Bedrock.
  */
 export const getProviderCacheControl = async (): Promise<Record<string, { cacheControl: { type: string } }>> => {
-    const loginMethod = await getLoginMethod();
-    if (loginMethod === LoginMethod.AWS_BEDROCK) {
-        return { bedrock: { cacheControl: { type: "ephemeral" } } };
-    }
     return { anthropic: { cacheControl: { type: "ephemeral" } } };
 };

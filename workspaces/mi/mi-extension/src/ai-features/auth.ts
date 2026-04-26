@@ -32,7 +32,7 @@ import { AIUserToken, AuthCredentials, LoginMethod, AwsBedrockSecrets } from '@w
 import { extension } from '../MIExtensionContext';
 import * as vscode from 'vscode';
 import { createAnthropic } from '@ai-sdk/anthropic';
-import { createAmazonBedrock } from '@ai-sdk/amazon-bedrock';
+import { createBedrockAnthropic } from '@ai-sdk/amazon-bedrock/anthropic';
 import { generateText } from 'ai';
 import { WICommandIds, IWso2PlatformExtensionAPI } from '@wso2/wso2-platform-core';
 import { logInfo, logWarn, logError } from './copilot/logger';
@@ -614,7 +614,7 @@ export const validateAwsCredentials = async (credentials: AwsBedrockValidationIn
                 throw new Error('Amazon Bedrock API key is required.');
             }
 
-            const bedrock = createAmazonBedrock({
+            const bedrock = createBedrockAnthropic({
                 region,
                 apiKey,
             });
@@ -656,7 +656,7 @@ export const validateAwsCredentials = async (credentials: AwsBedrockValidationIn
             throw new Error('Please enter a valid AWS secret access key.');
         }
 
-        const bedrock = createAmazonBedrock({
+        const bedrock = createBedrockAnthropic({
             region,
             accessKeyId,
             secretAccessKey,

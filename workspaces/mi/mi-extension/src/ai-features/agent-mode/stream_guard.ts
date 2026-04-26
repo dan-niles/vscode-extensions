@@ -110,6 +110,31 @@ function getErrorName(error: unknown): string | undefined {
 }
 
 export function getErrorDiagnostics(error: unknown): string {
+    const extractApiCallFields = (err: unknown): Record<string, unknown> => {
+        if (!err || typeof err !== 'object') {
+            return {};
+        }
+        const r = err as Record<string, unknown>;
+        const fields: Record<string, unknown> = {};
+        // Vercel AI SDK APICallError surface — most useful for provider 4xx debugging.
+        if (r.statusCode !== undefined) fields.statusCode = r.statusCode;
+        if (r.url !== undefined) fields.url = r.url;
+        if (typeof r.responseBody === 'string') {
+            fields.responseBody = r.responseBody.length > 2000
+                ? r.responseBody.slice(0, 2000) + '…[truncated]'
+                : r.responseBody;
+        }
+        if (r.data !== undefined) {
+            try {
+                fields.data = typeof r.data === 'string' ? r.data : JSON.stringify(r.data);
+            } catch {
+                fields.data = '[unserializable]';
+            }
+        }
+        if (r.responseHeaders !== undefined) fields.responseHeaders = r.responseHeaders;
+        return fields;
+    };
+
     if (error instanceof Error) {
         const topOfStack = typeof error.stack === 'string'
             ? error.stack.split('\n').slice(0, 3).join(' | ')
@@ -120,6 +145,8 @@ export function getErrorDiagnostics(error: unknown): string {
             code: getErrorCode(error),
             message: error.message,
             cause: cause ? getErrorMessage(cause) : undefined,
+            ...extractApiCallFields(error),
+            causeDiagnostics: cause ? extractApiCallFields(cause) : undefined,
             stack: topOfStack,
         });
     }
@@ -131,6 +158,7 @@ export function getErrorDiagnostics(error: unknown): string {
             code: getErrorCode(error),
             message: typeof record.message === 'string' ? record.message : undefined,
             type: typeof record.type === 'string' ? record.type : undefined,
+            ...extractApiCallFields(error),
         });
     }
 

@@ -31,6 +31,7 @@ const NATIVE_COMPACTION_TRIGGER_TOKENS = 200000;
 import { ModelMessage, streamText, stepCountIs, UserModelMessage, SystemModelMessage, wrapLanguageModel } from 'ai';
 import { AnthropicProviderOptions } from '@ai-sdk/anthropic';
 import { getAnthropicClient, getAnthropicClientForCustomModel, AnthropicModel, resolveMainModelId } from '../../../connection';
+import { getLoginMethod } from '../../../auth';
 import { getSystemPrompt } from '../main/system';
 import { getUserPrompt, UserPromptParams, UserPromptContentBlock } from './prompt';
 import { addCacheControlToMessages } from '../../../cache-utils';
@@ -83,7 +84,7 @@ import {
 } from '../../stream_guard';
 
 // Import types from mi-core (shared with visualizer)
-import { AgentEvent, AgentEventType, FileObject, ImageObject, AgentMode, ModelSettings } from '@wso2/mi-core';
+import { AgentEvent, AgentEventType, FileObject, ImageObject, AgentMode, LoginMethod, ModelSettings } from '@wso2/mi-core';
 
 // Re-export types for other modules that import from agent.ts
 export type { AgentEvent, AgentEventType };
@@ -656,9 +657,15 @@ export async function executeAgent(
         }
 
         // Build beta headers: include compaction beta when native compaction is enabled.
+        // Bedrock InvokeModel rejects `defer_loading` on `type: "custom"` tools unless the
+        // tool-search beta is set (the SDK auto-adds it only when a server-side tool_search
+        // tool is in the tools array, which we don't use). On direct Anthropic the header is
+        // a no-op for custom-tool defer_loading, so we add it unconditionally on Bedrock.
+        const isBedrock = (await getLoginMethod()) === LoginMethod.AWS_BEDROCK;
         const betaHeaders = [
             ...(request.thinking ? ['interleaved-thinking-2025-05-14'] : []),
             ...(ENABLE_NATIVE_COMPACTION ? ['compact-2026-01-12'] : []),
+            ...(isBedrock ? ['tool-search-tool-2025-10-19'] : []),
         ];
     const requestHeaders = betaHeaders.length > 0
         ? { 'anthropic-beta': betaHeaders.join(',') }
@@ -1121,6 +1128,11 @@ export async function executeAgent(
                     cleanupStreamLifecycle?.();
                     const errorMsg = getErrorMessage(part.error);
                     logError(`[Agent] Stream error: ${errorMsg}`);
+                    logError(`[Agent] Stream error diagnostics: ${getErrorDiagnostics(part.error)}`);
+                    try {
+                        const raw = JSON.stringify(part.error, Object.getOwnPropertyNames(part.error as any));
+                        logError(`[Agent] Stream error raw: ${raw.length > 4000 ? raw.slice(0, 4000) + '…[truncated]' : raw}`);
+                    } catch {}
                     emitEvent({
                         type: 'error',
                         error: errorMsg,
