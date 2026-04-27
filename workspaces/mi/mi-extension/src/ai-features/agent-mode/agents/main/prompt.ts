@@ -159,8 +159,13 @@ You are in {{mode_upper}} mode.{{#if mode_changed_from}} [mode changed from {{mo
  * post-compaction triggers and per-block hash drift, then passed to
  * `getUserPrompt` so each block renders the correct content (with or without
  * a "[context updated]" notice, or omitted entirely).
+ *
+ * `cleared`: the block was injected on a prior turn but is absent now (e.g.
+ * payloads removed by the user). Render an explicit removal notice so the
+ * model doesn't keep referencing the stale prior-turn reminder, and clear
+ * the persisted hash so the next non-empty injection starts fresh.
  */
-export type BlockInjectionStatus = 'omit' | 'first-injection' | 're-injection';
+export type BlockInjectionStatus = 'omit' | 'first-injection' | 're-injection' | 'cleared';
 
 /**
  * Per-block injection statuses for the five tracked session-context blocks.
@@ -214,6 +219,13 @@ export interface UserPromptParams {
      * mode. Ignored otherwise.
      */
     previousMode?: AgentMode;
+    /**
+     * Pre-built session context from `computeSessionContextBlockHashes`. When
+     * provided, `getUserPrompt` reuses the same snapshot instead of rebuilding
+     * it (avoids the second pass of pom.xml read, .git/HEAD read, and
+     * connector-store catalog lookup).
+     */
+    precomputedContext?: SessionContextBuildResult;
 }
 
 // ============================================================================
@@ -414,7 +426,7 @@ export interface SessionContextParams {
  * `computeSessionContextBlockHashes` derives a per-block hash from a stable
  * subset of these fields.
  */
-interface SessionContextSnapshot {
+export interface SessionContextSnapshot {
     // env block
     workingDirectory: string;
     isGitRepo: boolean;
@@ -591,13 +603,35 @@ function deriveBlockHashes(snapshot: SessionContextSnapshot): SessionContextBloc
 }
 
 /**
- * Compute per-block hashes for change detection. Returned shape matches
- * `SessionContextBlocksState` (`modePolicy` stored verbatim; `payloads`
- * undefined when no payloads provided) so agent.ts can compare directly.
+ * Bundles the per-block hashes (used by agent.ts for change detection) with
+ * the snapshot + catalog metadata they were derived from. Letting agent.ts
+ * pass this back into `getUserPrompt` via `precomputedContext` avoids
+ * `buildSessionContextSnapshot` running twice per turn (it touches .git/HEAD,
+ * pom.xml, runtime paths, and the connector store catalog).
  */
-export async function computeSessionContextBlockHashes(params: SessionContextParams): Promise<SessionContextBlockHashes> {
-    const { snapshot } = await buildSessionContextSnapshot(params);
-    return deriveBlockHashes(snapshot);
+export interface SessionContextBuildResult {
+    hashes: SessionContextBlockHashes;
+    snapshot: SessionContextSnapshot;
+    catalogWarnings: string[];
+    catalogStoreStatus: string;
+    runtimeVersionResolved: string | null;
+}
+
+/**
+ * Build the per-turn session context: snapshot + per-block hashes + catalog
+ * metadata. Agent.ts uses `result.hashes` for the block-status decisions and
+ * passes the whole result back through `UserPromptParams.precomputedContext`
+ * so `getUserPrompt` reuses the same snapshot.
+ */
+export async function computeSessionContextBlockHashes(params: SessionContextParams): Promise<SessionContextBuildResult> {
+    const built = await buildSessionContextSnapshot(params);
+    return {
+        hashes: deriveBlockHashes(built.snapshot),
+        snapshot: built.snapshot,
+        catalogWarnings: built.catalogWarnings,
+        catalogStoreStatus: built.catalogStoreStatus,
+        runtimeVersionResolved: built.runtimeVersionResolved,
+    };
 }
 
 // ============================================================================
@@ -615,7 +649,9 @@ const DEFAULT_BLOCK_STATUSES: BlockInjectionStatuses = {
 };
 
 function buildEnvBlockText(snapshot: SessionContextSnapshot, status: BlockInjectionStatus): string | undefined {
-    if (status === 'omit') {
+    // 'cleared' is unreachable for env (always-defined hash) but treat it as
+    // omit defensively so adding new statuses can't silently render junk.
+    if (status === 'omit' || status === 'cleared') {
         return undefined;
     }
     const headerSuffix = status === 're-injection' ? ` ${CONTEXT_UPDATED}` : '';
@@ -646,7 +682,7 @@ function buildEnvBlockText(snapshot: SessionContextSnapshot, status: BlockInject
 }
 
 function buildConnectorsBlockText(snapshot: SessionContextSnapshot, status: BlockInjectionStatus): string | undefined {
-    if (status === 'omit') {
+    if (status === 'omit' || status === 'cleared') {
         return undefined;
     }
     const prefix = status === 're-injection' ? `${CONTEXT_UPDATED}\n` : '';
@@ -668,7 +704,7 @@ ${snapshot.bundledInboundIds}`;
  * semantics; the `[context updated]` notice fires when the warning re-appears.
  */
 function buildWebAvailabilityBlockText(snapshot: SessionContextSnapshot, status: BlockInjectionStatus): string | undefined {
-    if (status === 'omit') {
+    if (status === 'omit' || status === 'cleared') {
         return undefined;
     }
     if (!snapshot.webSearchUnavailable) {
@@ -696,13 +732,20 @@ function buildFullModePolicyBlockText(
     if (mode !== 'plan') {
         return fullPolicy.trim();
     }
-    if (status === 'omit') {
+    if (status === 'omit' || status === 'cleared') {
         return undefined;
     }
     return fullPolicy.trim();
 }
 
 function buildPayloadsBlockText(payloads: string | undefined, status: BlockInjectionStatus): string | undefined {
+    if (status === 'cleared') {
+        // Payloads were present on a prior turn but absent now — model still
+        // has the stale "# Preconfigured Values" reminder in context, so
+        // explicitly tell it to discard those values.
+        return `# Preconfigured Values [removed]
+The preconfigured values referenced in earlier turns are no longer present in the Low-Code IDE. Discard them and do not rely on any prior preconfigured values until a new set is provided.`;
+    }
     if (status === 'omit' || !payloads) {
         return undefined;
     }
@@ -739,14 +782,18 @@ export async function getUserPrompt(params: UserPromptParams): Promise<UserPromp
     const currentlyOpenedFile = await getCurrentlyOpenedFile(params.projectPath);
 
     const mode = params.mode || 'edit';
-    const sessionContext = await buildSessionContextSnapshot({
-        projectPath: params.projectPath,
-        runtimeVersion: params.runtimeVersion,
-        webSearchUnavailable: params.webSearchUnavailable,
-        loginMethod: params.loginMethod,
-        mode,
-        payloads: params.payloads,
-    });
+    // Reuse the pre-built context from agent.ts when available — otherwise
+    // fall back to building it here (e.g. tests or callers that haven't run
+    // `computeSessionContextBlockHashes` first).
+    const sessionContext: { snapshot: SessionContextSnapshot; catalogWarnings: string[]; catalogStoreStatus: string; runtimeVersionResolved: string | null } =
+        params.precomputedContext ?? await buildSessionContextSnapshot({
+            projectPath: params.projectPath,
+            runtimeVersion: params.runtimeVersion,
+            webSearchUnavailable: params.webSearchUnavailable,
+            loginMethod: params.loginMethod,
+            mode,
+            payloads: params.payloads,
+        });
     const { snapshot } = sessionContext;
 
     const fullModePolicy = await getModeReminder({ mode });

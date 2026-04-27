@@ -450,6 +450,7 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
                     <AuthModeSelector>
                         <AuthModeButton
                             type="button"
+                            aria-pressed={bedrockAuthType === "api_key"}
                             selected={bedrockAuthType === "api_key"}
                             onClick={() => {
                                 setBedrockAuthType("api_key");
@@ -462,6 +463,7 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
                         </AuthModeButton>
                         <AuthModeButton
                             type="button"
+                            aria-pressed={bedrockAuthType === "iam"}
                             selected={bedrockAuthType === "iam"}
                             onClick={() => {
                                 setBedrockAuthType("iam");
@@ -584,7 +586,7 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
                         <InputRow>
                             <StyledTextField
                                 type={showTavilyApiKey ? "text" : "password"}
-                                placeholder="Tavily API key (optional — enables web search)"
+                                placeholder="Tavily API key (optional at login — enables web search later)"
                                 value={tavilyApiKey}
                                 onChange={(e: any) => {
                                     setTavilyApiKey(e.target?.value ?? '');
@@ -619,7 +621,7 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
                             }}
                         >
                             Get a free Tavily API key
-                        </button>{" "}— required for web_search and web_fetch on AWS Bedrock. You can add or change it later in Settings.
+                        </button>{" "}— optional at login; needed later to enable web_search / web_fetch on AWS Bedrock. You can add or change it in Settings.
                     </HelperText>
 
                     {displayError && (

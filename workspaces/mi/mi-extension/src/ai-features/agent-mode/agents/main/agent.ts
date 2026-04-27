@@ -20,7 +20,7 @@
 // Dev Feature Flags
 // ============================================================================
 export const ENABLE_LANGFUSE = false; // Set to false to disable Langfuse tracing
-export const ENABLE_DEVTOOLS = false; // Set to true to enable AI SDK DevTools (local development only!)
+export const ENABLE_DEVTOOLS = true; // Set to true to enable AI SDK DevTools (local development only!)
 export const ENABLE_NATIVE_COMPACTION = true; // Set to true to enable Anthropic native server-side compaction (auto-summarizes when context grows large)
 
 // Native compaction trigger threshold in tokens.
@@ -204,12 +204,12 @@ interface NormalizedToolResultForUi {
 
 /**
  * Compare a per-block tracking value against its persisted predecessor and
- * decide what to render. `omit`: same as last turn — skip rendering. `first-injection`:
- * never injected before (or full re-prime needed) — render without notice.
- * `re-injection`: value drifted — render with a "[context updated]" notice.
- *
- * `current === undefined` means the block has no content this turn (e.g.,
- * payloads not provided) — always omit.
+ * decide what to render. `omit`: same as last turn — skip rendering.
+ * `first-injection`: never injected before (or full re-prime needed) — render
+ * without notice. `re-injection`: value drifted — render with a
+ * "[context updated]" notice. `cleared`: was injected before but is now
+ * absent (e.g. payloads removed by the user) — render an explicit removal
+ * notice and clear the persisted hash so future injections start fresh.
  */
 function decideBlockStatus(
     current: string | undefined,
@@ -217,6 +217,12 @@ function decideBlockStatus(
     forceFirstInjection: boolean,
 ): BlockInjectionStatus {
     if (current === undefined) {
+        // Was injected on a prior turn but absent now — emit a removal notice
+        // so the model doesn't keep referencing the stale prior-turn block.
+        // First-message / post-compaction wipes prior context, so 'omit' there.
+        if (previous !== undefined && !forceFirstInjection) {
+            return 'cleared';
+        }
         return 'omit';
     }
     if (forceFirstInjection || previous === undefined) {
@@ -237,11 +243,28 @@ function buildUpdatedBlocksState(
 ): SessionContextBlocksState | undefined {
     const updated: SessionContextBlocksState = { ...previous };
     let touched = false;
-    if (statuses.env !== 'omit') { updated.env = current.env; touched = true; }
-    if (statuses.connectors !== 'omit') { updated.connectors = current.connectors; touched = true; }
-    if (statuses.webAvailability !== 'omit') { updated.webAvailability = current.webAvailability; touched = true; }
-    if (statuses.modePolicy !== 'omit') { updated.modePolicy = current.modePolicy; touched = true; }
-    if (statuses.payloads !== 'omit') { updated.payloads = current.payloads; touched = true; }
+    // 'cleared' wipes the persisted hash so the next non-empty injection
+    // counts as 'first-injection' rather than 're-injection'. In practice
+    // only payloads can be cleared (other blocks always have a current hash),
+    // but applying uniformly keeps the semantics consistent.
+    const apply = <K extends keyof SessionContextBlocksState>(
+        key: K,
+        status: BlockInjectionStatus,
+        nextHash: SessionContextBlocksState[K] | undefined,
+    ): void => {
+        if (status === 'cleared') {
+            updated[key] = undefined as SessionContextBlocksState[K];
+            touched = true;
+        } else if (status !== 'omit') {
+            updated[key] = nextHash as SessionContextBlocksState[K];
+            touched = true;
+        }
+    };
+    apply('env', statuses.env, current.env);
+    apply('connectors', statuses.connectors, current.connectors);
+    apply('webAvailability', statuses.webAvailability, current.webAvailability);
+    apply('modePolicy', statuses.modePolicy, current.modePolicy);
+    apply('payloads', statuses.payloads, current.payloads);
     return touched ? updated : undefined;
 }
 
@@ -251,21 +274,23 @@ function logBlockInjectionDrift(
     current: SessionContextBlockHashes,
 ): void {
     const driftedBlocks: string[] = [];
-    if (statuses.env === 're-injection') {
-        driftedBlocks.push(`env(${previous.env}→${current.env})`);
-    }
-    if (statuses.connectors === 're-injection') {
-        driftedBlocks.push(`connectors(${previous.connectors}→${current.connectors})`);
-    }
-    if (statuses.webAvailability === 're-injection') {
-        driftedBlocks.push(`webAvailability(${previous.webAvailability}→${current.webAvailability})`);
-    }
-    if (statuses.modePolicy === 're-injection') {
-        driftedBlocks.push(`mode(${previous.modePolicy}→${current.modePolicy})`);
-    }
-    if (statuses.payloads === 're-injection') {
-        driftedBlocks.push(`payloads(${previous.payloads}→${current.payloads})`);
-    }
+    const note = (
+        name: string,
+        status: BlockInjectionStatus,
+        prev: string | undefined,
+        next: string | undefined,
+    ): void => {
+        if (status === 're-injection') {
+            driftedBlocks.push(`${name}(${prev}→${next})`);
+        } else if (status === 'cleared') {
+            driftedBlocks.push(`${name}(${prev}→cleared)`);
+        }
+    };
+    note('env', statuses.env, previous.env, current.env);
+    note('connectors', statuses.connectors, previous.connectors, current.connectors);
+    note('webAvailability', statuses.webAvailability, previous.webAvailability, current.webAvailability);
+    note('mode', statuses.modePolicy, previous.modePolicy, current.modePolicy);
+    note('payloads', statuses.payloads, previous.payloads, current.payloads);
     if (driftedBlocks.length > 0) {
         logInfo(`[Agent] Session-context drift — re-injecting: ${driftedBlocks.join(', ')}`);
     }
@@ -567,7 +592,7 @@ export async function executeAgent(
             && (chatHistory[0] as any)?._compactSynthetic === true;
         const forceFirstInjection = isFirstMessage || isPostCompaction;
 
-        const currentBlockHashes = await computeSessionContextBlockHashes({
+        const sessionContextResult = await computeSessionContextBlockHashes({
             projectPath: request.projectPath,
             runtimeVersion,
             webSearchUnavailable,
@@ -575,6 +600,7 @@ export async function executeAgent(
             mode: request.mode || 'edit',
             payloads: request.payloads,
         });
+        const currentBlockHashes = sessionContextResult.hashes;
         const sessionMetadata = request.chatHistoryManager
             ? await request.chatHistoryManager.loadMetadata()
             : null;
@@ -599,7 +625,9 @@ export async function executeAgent(
             logBlockInjectionDrift(blockStatuses, previousBlocks, currentBlockHashes);
         }
 
-        // Build user prompt
+        // Build user prompt — pass the pre-built sessionContextResult so
+        // getUserPrompt skips the second pass of pom.xml read, .git/HEAD read,
+        // and connector-store catalog lookup.
         const userPromptParams: UserPromptParams = {
             query: request.query,
             mode: request.mode || 'edit',
@@ -612,6 +640,7 @@ export async function executeAgent(
             payloads: request.payloads,
             blockStatuses,
             previousMode,
+            precomputedContext: sessionContextResult,
         };
         const userPromptBlocks = await getUserPrompt(userPromptParams);
 
