@@ -28,6 +28,8 @@ import { executeTraceServerTask } from './trace-server-task';
 import { getCurrentProjectRoot, tryGetCurrentBallerinaFile } from '../../utils/project-utils';
 import { findBallerinaPackageRoot } from '../../utils';
 import { requiresPackageSelection, selectPackageOrPrompt } from '../../utils/command-utils';
+import { sendTracingStatusChangedNotification } from '../../RPCLayer';
+import { isIntegrationRunning, restartIntegration } from '../project/integration-runner-state';
 
 export const TRACE_WINDOW_COMMAND = 'ballerina.showTraceWindow';
 export const ENABLE_TRACING_COMMAND = 'ballerina.enableTracing';
@@ -93,6 +95,9 @@ export function activateTracing(ballerinaExtInstance: BallerinaExtension) {
         } else if (prevEnabled && !isEnabled) {
             disposeTraceAnimation();
         }
+        if (prevEnabled !== isEnabled) {
+            sendTracingStatusChangedNotification({ enabled: isEnabled });
+        }
         prevEnabled = isEnabled;
     });
 
@@ -112,7 +117,7 @@ export function activateTracing(ballerinaExtInstance: BallerinaExtension) {
         }
 
         TracerMachine.enable(targetPath);
-        vscode.window.showInformationMessage('Tracing enabled.');
+        await notifyTracingToggle(true);
     });
 
     const disableTracingCommand = vscode.commands.registerCommand(DISABLE_TRACING_COMMAND, async () => {
@@ -121,7 +126,7 @@ export function activateTracing(ballerinaExtInstance: BallerinaExtension) {
             return;
         }
         TracerMachine.disable(targetPath);
-        vscode.window.showInformationMessage('Tracing disabled.');
+        await notifyTracingToggle(false);
     });
 
     const clearTracesCommand = vscode.commands.registerCommand(CLEAR_TRACES_COMMAND, () => {
@@ -273,5 +278,26 @@ function showTraceDetails(trace: Trace, focusSpanId?: string, isAgentChat?: bool
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         vscode.window.showErrorMessage(`Failed to show trace details: ${message}`);
+    }
+}
+
+/**
+ * Surface the right notification after a tracing toggle:
+ * - Running integration  → warning with "Restart Integration" action.
+ * - Otherwise            → silent (the diagram button + trace tree view convey state).
+ */
+async function notifyTracingToggle(enabled: boolean): Promise<void> {
+    if (!isIntegrationRunning()) {
+        vscode.window.showInformationMessage(enabled ? 'Tracing enabled.' : 'Tracing disabled.');
+        return;
+    }
+    const restartAction = "Restart Integration";
+    const selection = await vscode.window.showWarningMessage(
+        "Tracing changes only take effect on a new run. Restart the integration to apply.",
+        restartAction,
+        "Dismiss"
+    );
+    if (selection === restartAction) {
+        await restartIntegration();
     }
 }

@@ -130,7 +130,19 @@ function startServer(context: TracerMachineContext, event?: any): Thenable<vscod
 }
 
 function stopServer(context: TracerMachineContext, event?: any): Promise<void> {
-    return TraceServer.stop();
+    const taskExecution = context.taskExecution;
+    if (!taskExecution || !vscode.tasks.taskExecutions.includes(taskExecution)) {
+        return TraceServer.stop();
+    }
+    return new Promise<void>((resolve) => {
+        const subscription = vscode.tasks.onDidEndTask((endEvent) => {
+            if (endEvent.execution === taskExecution) {
+                subscription.dispose();
+                resolve();
+            }
+        });
+        taskExecution.terminate();
+    });
 }
 
 

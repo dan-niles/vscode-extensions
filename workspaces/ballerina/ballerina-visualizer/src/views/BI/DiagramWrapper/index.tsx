@@ -123,6 +123,7 @@ export function DiagramWrapper(param: DiagramWrapperProps) {
     const [showSequenceDiagram, setShowSequenceDiagram] = useState(false);
     const [enableSequenceDiagram, setEnableSequenceDiagram] = useState(false);
     const [loadingDiagram, setLoadingDiagram] = useState(true);
+    const [hasLoadedTitleBar, setHasLoadedTitleBar] = useState(false);
     const [fileName, setFileName] = useState("");
     const [serviceType, setServiceType] = useState("");
     const [serviceName, setServiceName] = useState("");
@@ -226,6 +227,14 @@ export function DiagramWrapper(param: DiagramWrapperProps) {
         checkTracingStatus();
     }, []);
 
+    // Keep the toggle button in sync with tracing changes triggered elsewhere
+    // (e.g. the VS Code command palette).
+    useEffect(() => {
+        rpcClient.getAgentChatRpcClient().onTracingStatusChanged((status) => {
+            setIsTracingEnabled(status.enabled);
+        });
+    }, [rpcClient]);
+
     const checkTracingStatus = async () => {
         try {
             const status = await rpcClient.getAgentChatRpcClient().getTracingStatus();
@@ -267,6 +276,7 @@ export function DiagramWrapper(param: DiagramWrapperProps) {
 
     const handleReadyDiagram = (fileName?: string, parentMetadata?: ParentMetadata, position?: NodePosition, parentCodedata?: CodeData) => {
         setLoadingDiagram(false);
+        setHasLoadedTitleBar(true);
         if (fileName) {
             setFileName(fileName);
         }
@@ -595,7 +605,7 @@ export function DiagramWrapper(param: DiagramWrapperProps) {
     return (
         <View>
             <TopNavigationBar projectPath={projectPath} />
-            {loadingDiagram ? (
+            {loadingDiagram && !hasLoadedTitleBar ? (
                 <TitleBarSkeleton />
             ) : (
                 <TitleBar title={getTitle()} subtitleElement={getSubtitleElement} actions={getActions()} />

@@ -33,3 +33,4 @@ export const getSessionInfo: RequestType<void, SessionInfoResponse> = { method: 
 export const getAvailableChatAgents: RequestType<void, AvailableAgentsResponse> = { method: `${_preFix}/getAvailableChatAgents` };
 export const switchChatAgent: RequestType<SwitchAgentRequest, SwitchAgentResponse> = { method: `${_preFix}/switchChatAgent` };
 export const activeAgentChanged: NotificationType<string> = { method: `${_preFix}/activeAgentChanged` };
+export const tracingStatusChanged: NotificationType<TraceStatus> = { method: `${_preFix}/tracingStatusChanged` };
