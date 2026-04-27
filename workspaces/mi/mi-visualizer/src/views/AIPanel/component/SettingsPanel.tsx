@@ -71,7 +71,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
             mainModelCustomId: undefined,
             subModelCustomId: undefined,
         });
-        setIsThinkingEnabled(false);
+        setIsThinkingEnabled(true);
     };
 
     // ----- Web Search settings -----
@@ -192,7 +192,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
         modelSettings.subModelPreset === DEFAULT_SUB &&
         !modelSettings.mainModelCustomId &&
         !modelSettings.subModelCustomId &&
-        !isThinkingEnabled;
+        isThinkingEnabled;
 
     const currentMainOption = MAIN_AGENT_OPTIONS.find(o => o.value === modelSettings.mainModelPreset) || MAIN_AGENT_OPTIONS[0];
     const currentSubOption = SUB_AGENT_OPTIONS.find(o => o.value === modelSettings.subModelPreset) || SUB_AGENT_OPTIONS[0];
@@ -285,7 +285,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
                 <SettingsSection title="Thinking Mode">
                     <div className="flex items-center justify-between">
                         <span className="text-[13px]" style={{ color: "var(--vscode-foreground)" }}>
-                            Extended Thinking
+                            Adaptive Thinking
                         </span>
                         <ToggleGroup
                             options={["Off", "On"]}
@@ -296,9 +296,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
                     </div>
                     {isThinkingEnabled && (
                         <InfoNote
-                            icon="warning"
-                            variant="warning"
-                            text="Copilot may overthink simple tasks, increasing latency and cost. WSO2 recommends keeping thinking off for most use cases."
+                            icon="info"
+                            variant="info"
+                            text="Disable if the agent overthinks or feels too slow on simple requests."
                         />
                     )}
                 </SettingsSection>

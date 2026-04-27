@@ -528,6 +528,20 @@ export async function executeAgent(
     // Session directory for output files (build.txt, run.txt)
     const sessionDir = getCopilotSessionDir(request.projectPath, sessionId);
 
+    // Declared outside the try so the catch path can also flush open thinking
+    // blocks (errors / aborts mid-stream would otherwise leave the UI's
+    // <thinking data-loading="true"> spinner stuck forever).
+    const reasoningById = new Map<string, string>();
+    const flushOpenThinkingBlocks = (): void => {
+        if (reasoningById.size === 0) {
+            return;
+        }
+        for (const id of reasoningById.keys()) {
+            emitEvent({ type: 'thinking_end', thinkingId: id });
+        }
+        reasoningById.clear();
+    };
+
     try {
         logInfo(`[Agent] Starting agent execution for project: ${request.projectPath}`);
 
@@ -793,12 +807,14 @@ export async function executeAgent(
         };
 
         // Configure Anthropic provider options.
-        // When thinking is enabled, keep reasoning in model messages for JSONL replay.
+        // - `adaptive` lets the model decide whether to think per step.
+        // - `effort: 'low'` biases adaptive toward skipping for simple steps.
+        // - `display: 'summarized'` is required on Opus 4.7 (default changed to
+        //   'omitted' there) to actually surface reasoning text to the UI;
+        //   harmless on Sonnet which already defaults to summarized.
         const anthropicOptions: AnthropicProviderOptions = request.thinking
-        // NOTE: Current pinned @ai-sdk/anthropic types support enabled/disabled thinking.
-        // Adaptive thinking can be enabled once the SDK is upgraded in this repo.
-        ? { thinking: { type: 'adaptive' }, effort: 'low' }
-        : {};
+            ? { thinking: { type: 'adaptive', display: 'summarized' } as any, effort: 'low' }
+            : {};
 
         // Native server-side compaction: Anthropic auto-summarizes the conversation
         // when input tokens exceed the trigger threshold. The compaction block is
@@ -950,8 +966,8 @@ export async function executeAgent(
         const toolInputMap = new Map<string, any>();
         // Track tool calls that already emitted a pre-input loading state.
         const preloadedToolCallIds = new Set<string>();
-        // Track reasoning text by block ID and emit complete thinking blocks on end.
-        const reasoningById = new Map<string, string>();
+        // (reasoningById + flushOpenThinkingBlocks declared above the try so
+        // catch / unexpected-end paths can flush too.)
         // Track whether the current text block is a native compaction summary.
         let isCompactionBlock = false;
         let compactionContent = '';
@@ -1346,6 +1362,8 @@ export async function executeAgent(
                         await flushNativeCompaction();
                     }
 
+                    // Close any reasoning blocks Anthropic didn't end explicitly.
+                    flushOpenThinkingBlocks();
                     cleanupStreamLifecycle?.();
                     logInfo(`[Agent] Execution finished. Modified files: ${modifiedFiles.length}`);
                     const finishReason = normalizeFinishReason(part);
@@ -1378,6 +1396,7 @@ export async function executeAgent(
         }
 
         // Stream completed without finish event (shouldn't happen normally)
+        flushOpenThinkingBlocks();
         cleanupStreamLifecycle?.();
         // Capture partial messages if available, but do not block forever waiting for response.
         try {
@@ -1401,6 +1420,7 @@ export async function executeAgent(
         };
 
     } catch (error: any) {
+        flushOpenThinkingBlocks();
         cleanupStreamLifecycle?.();
         const abortReason = streamWatchdog?.getAbortReason();
         const classifiedError = classifyAgentExecutionError({

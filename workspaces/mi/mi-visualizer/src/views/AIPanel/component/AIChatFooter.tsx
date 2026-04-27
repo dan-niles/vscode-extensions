@@ -69,7 +69,12 @@ function appendThinkingDelta(content: string, thinkingId: string, delta: string)
         content.includes(`<thinking data-id="${thinkingId}">`);
 
     if (!hasExistingBlock) {
-        return appendThinkingPlaceholder(content, thinkingId).replace("</thinking>", `${delta}</thinking>`);
+        // Build the new placeholder directly with the delta inside. The previous
+        // approach (appendThinkingPlaceholder + .replace("</thinking>", …))
+        // matched the FIRST </thinking> in content, so a delta arriving without
+        // its start (e.g. during panel reconnect / event replay) would inject
+        // into a prior finalized block instead of the new one.
+        return `${content}\n\n<thinking data-id="${thinkingId}" data-loading="true">${delta}</thinking>`;
     }
 
     return updateThinkingContent(content, thinkingId, (current) => current + delta);
