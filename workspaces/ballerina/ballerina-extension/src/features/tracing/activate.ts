@@ -284,7 +284,8 @@ function showTraceDetails(trace: Trace, focusSpanId?: string, isAgentChat?: bool
 /**
  * Surface the right notification after a tracing toggle:
  * - Running integration  → warning with "Restart Integration" action.
- * - Otherwise            → silent (the diagram button + trace tree view convey state).
+ * - Otherwise            → info toast confirming the new state, since the
+ *                          command palette caller may not have any UI in view.
  */
 async function notifyTracingToggle(enabled: boolean): Promise<void> {
     if (!isIntegrationRunning()) {

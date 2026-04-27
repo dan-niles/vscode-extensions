@@ -46,6 +46,10 @@ export async function restartIntegration(): Promise<void> {
         if (script) {
             // Re-launch directly so we skip the BI run flow's Try-It suggestion.
             await startDebugging(Uri.file(script), false, false, true);
+        } else {
+            window.showErrorMessage(
+                "Could not restart the integration automatically — please run it again manually."
+            );
         }
         return;
     }
@@ -55,7 +59,8 @@ export async function restartIntegration(): Promise<void> {
     }
     await terminateTraceServerTask();
     TracerMachine.startServer();
-    await commands.executeCommand(PALETTE_COMMANDS.RUN, lastRunPath);
+    const runArg = lastRunPath ? Uri.file(lastRunPath) : undefined;
+    await commands.executeCommand(PALETTE_COMMANDS.RUN, runArg);
 }
 
 async function terminateTraceServerTask(): Promise<void> {
