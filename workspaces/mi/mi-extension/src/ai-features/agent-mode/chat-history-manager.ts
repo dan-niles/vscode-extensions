@@ -54,6 +54,29 @@ export interface SessionMetadata {
      * Used to skip loading unsupported sessions after breaking storage changes.
      */
     sessionVersion?: number;
+    /**
+     * Per-block tracking state for the user-prompt session-context blocks.
+     * The agent re-injects only the blocks whose stored value drifts since
+     * the last turn. Persisted so the check survives extension restarts.
+     */
+    sessionContextBlocks?: SessionContextBlocksState;
+}
+
+/**
+ * Tracking state for each session-context block. Absent fields mean "block
+ * has never been injected" (treated as a first injection on the next turn).
+ *
+ * Re-exported (via duplicate definition) from `@wso2/mi-core` to avoid a
+ * dev-loop rebuild dependency on mi-core when this type changes — same pattern
+ * as `SessionMetadata` above.
+ */
+export interface SessionContextBlocksState {
+    env?: string;
+    connectors?: string;
+    webAvailability?: string;
+    /** Verbatim mode name (`"ask" | "edit" | "plan"`) for "[mode changed from EDIT]" notices. */
+    modePolicy?: string;
+    payloads?: string;
 }
 
 export const TOOL_USE_INTERRUPTION_CONTEXT = `<system-reminder>The user interrupted while a tool was running. The tool use was rejected and any pending mutations were NOT applied. Stop immediately and wait for the user's next message.</system-reminder>`;

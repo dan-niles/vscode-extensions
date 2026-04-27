@@ -33,7 +33,15 @@ import { AnthropicProviderOptions } from '@ai-sdk/anthropic';
 import { getAnthropicClient, getAnthropicClientForCustomModel, getAnthropicProvider, AnthropicModel, resolveMainModelId } from '../../../connection';
 import { getLoginMethod, getTavilyApiKey } from '../../../auth';
 import { getSystemPrompt } from '../main/system';
-import { getUserPrompt, UserPromptParams, UserPromptContentBlock } from './prompt';
+import {
+    BlockInjectionStatus,
+    BlockInjectionStatuses,
+    computeSessionContextBlockHashes,
+    getUserPrompt,
+    SessionContextBlockHashes,
+    UserPromptContentBlock,
+    UserPromptParams,
+} from './prompt';
 import { addCacheControlToMessages } from '../../../cache-utils';
 import { buildMessageContent } from '../../attachment-utils';
 import { COMPACT_SYSTEM_REMINDER_AUTO_TRIGGERED } from '../compact/prompt';
@@ -64,7 +72,7 @@ import {
     DEEPWIKI_ASK_QUESTION_TOOL_NAME,
 } from './tools';
 import { logInfo, logError, logDebug } from '../../../copilot/logger';
-import { ChatHistoryManager, TOOL_USE_INTERRUPTION_CONTEXT } from '../../chat-history-manager';
+import { ChatHistoryManager, SessionContextBlocksState, TOOL_USE_INTERRUPTION_CONTEXT } from '../../chat-history-manager';
 import { getToolAction } from '../../tool-action-mapper';
 import { AgentUndoCheckpointManager } from '../../undo/checkpoint-manager';
 import { getCopilotSessionDir } from '../../storage-paths';
@@ -142,6 +150,12 @@ export interface AgentRequest {
     undoCheckpointManager?: AgentUndoCheckpointManager;
     /** Model settings for this session (main model + sub-agent model overrides) */
     modelSettings?: ModelSettings;
+    /**
+     * Pre-configured payload values (JSON-stringified) from the Low-Code IDE.
+     * Surfaced to the agent in a tracked `<system-reminder>` and re-injected
+     * only when its canonicalized hash drifts (see `SessionMetadata.sessionContextBlocks.payloads`).
+     */
+    payloads?: string;
     /** Called after a stream step is persisted to JSONL history */
     onStepPersisted?: () => void;
 }
@@ -186,6 +200,75 @@ interface NormalizedToolResultForUi {
     exitCode?: number | null;
     taskId?: string;
     [key: string]: unknown;
+}
+
+/**
+ * Compare a per-block tracking value against its persisted predecessor and
+ * decide what to render. `omit`: same as last turn — skip rendering. `first-injection`:
+ * never injected before (or full re-prime needed) — render without notice.
+ * `re-injection`: value drifted — render with a "[context updated]" notice.
+ *
+ * `current === undefined` means the block has no content this turn (e.g.,
+ * payloads not provided) — always omit.
+ */
+function decideBlockStatus(
+    current: string | undefined,
+    previous: string | undefined,
+    forceFirstInjection: boolean,
+): BlockInjectionStatus {
+    if (current === undefined) {
+        return 'omit';
+    }
+    if (forceFirstInjection || previous === undefined) {
+        return 'first-injection';
+    }
+    return previous === current ? 'omit' : 're-injection';
+}
+
+/**
+ * Merge the current per-block hashes into the persisted state, but only for
+ * blocks we're about to inject this turn. Returns `undefined` when no block
+ * needs persisting (avoids a no-op metadata write).
+ */
+function buildUpdatedBlocksState(
+    previous: SessionContextBlocksState,
+    current: SessionContextBlockHashes,
+    statuses: BlockInjectionStatuses,
+): SessionContextBlocksState | undefined {
+    const updated: SessionContextBlocksState = { ...previous };
+    let touched = false;
+    if (statuses.env !== 'omit') { updated.env = current.env; touched = true; }
+    if (statuses.connectors !== 'omit') { updated.connectors = current.connectors; touched = true; }
+    if (statuses.webAvailability !== 'omit') { updated.webAvailability = current.webAvailability; touched = true; }
+    if (statuses.modePolicy !== 'omit') { updated.modePolicy = current.modePolicy; touched = true; }
+    if (statuses.payloads !== 'omit') { updated.payloads = current.payloads; touched = true; }
+    return touched ? updated : undefined;
+}
+
+function logBlockInjectionDrift(
+    statuses: BlockInjectionStatuses,
+    previous: SessionContextBlocksState,
+    current: SessionContextBlockHashes,
+): void {
+    const driftedBlocks: string[] = [];
+    if (statuses.env === 're-injection') {
+        driftedBlocks.push(`env(${previous.env}→${current.env})`);
+    }
+    if (statuses.connectors === 're-injection') {
+        driftedBlocks.push(`connectors(${previous.connectors}→${current.connectors})`);
+    }
+    if (statuses.webAvailability === 're-injection') {
+        driftedBlocks.push(`webAvailability(${previous.webAvailability}→${current.webAvailability})`);
+    }
+    if (statuses.modePolicy === 're-injection') {
+        driftedBlocks.push(`mode(${previous.modePolicy}→${current.modePolicy})`);
+    }
+    if (statuses.payloads === 're-injection') {
+        driftedBlocks.push(`payloads(${previous.payloads}→${current.payloads})`);
+    }
+    if (driftedBlocks.length > 0) {
+        logInfo(`[Agent] Session-context drift — re-injecting: ${driftedBlocks.join(', ')}`);
+    }
 }
 
 const TOOL_INTERRUPTION_ERROR_CODE = 'AGENT_TOOL_INTERRUPTION';
@@ -454,12 +537,6 @@ export async function executeAgent(
             }
         } as SystemModelMessage;
 
-        // Include env + connector context only on first message or after compaction
-        const isFirstMessage = chatHistory.length === 0;
-        const isPostCompaction = chatHistory.length > 0
-            && (chatHistory[0] as any)?._compactSynthetic === true;
-        const includeSessionContext = isFirstMessage || isPostCompaction;
-
         // Resolve the web-tool provider once for this turn.
         // - Anthropic/Proxy paths get Anthropic's first-party server tools registered
         //   directly on the main streamText call (no wrapper, no extra LLM round-trip).
@@ -475,6 +552,53 @@ export async function executeAgent(
         const anthropicProviderForWebTools =
             webToolsProvider === 'anthropic-server' ? await getAnthropicProvider() : undefined;
 
+        // Per-block re-injection decision. For each tracked block (env, connectors,
+        // web availability, mode policy, payloads) compute a current hash, compare
+        // to the value persisted on session metadata, and decide:
+        //   - 'omit'            : block is unchanged, skip rendering it
+        //   - 'first-injection' : never injected before (or full re-prime needed),
+        //                         render without a "[context updated]" notice
+        //   - 're-injection'    : value drifted, render with a notice so the model
+        //                         knows something changed
+        // First message and post-compaction force first-injection on every block —
+        // model has lost prior context so we re-prime everything without notices.
+        const isFirstMessage = chatHistory.length === 0;
+        const isPostCompaction = chatHistory.length > 0
+            && (chatHistory[0] as any)?._compactSynthetic === true;
+        const forceFirstInjection = isFirstMessage || isPostCompaction;
+
+        const currentBlockHashes = await computeSessionContextBlockHashes({
+            projectPath: request.projectPath,
+            runtimeVersion,
+            webSearchUnavailable,
+            loginMethod,
+            mode: request.mode || 'edit',
+            payloads: request.payloads,
+        });
+        const sessionMetadata = request.chatHistoryManager
+            ? await request.chatHistoryManager.loadMetadata()
+            : null;
+        const previousBlocks = sessionMetadata?.sessionContextBlocks ?? {};
+
+        const blockStatuses: BlockInjectionStatuses = {
+            env: decideBlockStatus(currentBlockHashes.env, previousBlocks.env, forceFirstInjection),
+            connectors: decideBlockStatus(currentBlockHashes.connectors, previousBlocks.connectors, forceFirstInjection),
+            webAvailability: decideBlockStatus(currentBlockHashes.webAvailability, previousBlocks.webAvailability, forceFirstInjection),
+            modePolicy: decideBlockStatus(currentBlockHashes.modePolicy, previousBlocks.modePolicy, forceFirstInjection),
+            payloads: decideBlockStatus(currentBlockHashes.payloads, previousBlocks.payloads, forceFirstInjection),
+        };
+        const previousMode = previousBlocks.modePolicy as AgentMode | undefined;
+
+        // Persist the new hashes for any block we're about to inject. Eagerly:
+        // a crash between persist and the request reaching the model means the
+        // next turn skips injection — same failure mode as the original
+        // first-message-only behavior, so no regression vs prior behavior.
+        const updatedBlocks = buildUpdatedBlocksState(previousBlocks, currentBlockHashes, blockStatuses);
+        if (updatedBlocks && request.chatHistoryManager) {
+            await request.chatHistoryManager.updateMetadata({ sessionContextBlocks: updatedBlocks });
+            logBlockInjectionDrift(blockStatuses, previousBlocks, currentBlockHashes);
+        }
+
         // Build user prompt
         const userPromptParams: UserPromptParams = {
             query: request.query,
@@ -483,9 +607,11 @@ export async function executeAgent(
             sessionId,
             runtimeVersion,
             runtimeVersionDetected: systemPromptSelection.runtimeVersionDetected,
-            includeSessionContext,
             webSearchUnavailable,
             loginMethod,
+            payloads: request.payloads,
+            blockStatuses,
+            previousMode,
         };
         const userPromptBlocks = await getUserPrompt(userPromptParams);
 
