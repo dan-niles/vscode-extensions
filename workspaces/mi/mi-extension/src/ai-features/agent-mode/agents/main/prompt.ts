@@ -193,8 +193,6 @@ export interface UserPromptParams {
     projectPath: string;
     /** Session ID for plan file path generation */
     sessionId?: string;
-    /** Pre-configured payloads, query params, or path params (optional) */
-    payloads?: string;
     /** MI runtime version from pom.xml (optional; avoids re-reading pom when already known) */
     runtimeVersion?: string | null;
     /** True when runtime version was detected from project metadata */
@@ -406,7 +404,7 @@ function getRuntimePaths(projectPath: string): {
 
 /**
  * Subset of `UserPromptParams` needed to compute the session-context snapshot
- * (env + connectors + web availability + mode + payloads). Used by both
+ * (env + connectors + web availability + mode + tryout payloads). Used by both
  * `getUserPrompt` and `computeSessionContextBlockHashes` so the two stay in
  * lockstep.
  */
@@ -416,8 +414,19 @@ export interface SessionContextParams {
     webSearchUnavailable?: boolean;
     loginMethod?: LoginMethod;
     mode?: AgentMode;
-    /** JSON-stringified preconfigured payloads (any key order); will be canonicalized before hashing. */
-    payloads?: string;
+}
+
+/**
+ * Per-file fingerprint for `.tryout/*.json`. mtimeMs+size is good enough
+ * for change detection here — the IDE always writes through normal
+ * `fs.writeFile`, so an unchanged-content file keeps its mtime, and any
+ * real edit bumps it. Avoids reading every payload's bytes per turn
+ * (matters when users stash large saved requests).
+ */
+interface TryoutPayloadEntry {
+    name: string;
+    mtimeMs: number;
+    size: number;
 }
 
 /**
@@ -452,10 +461,12 @@ export interface SessionContextSnapshot {
     // mode policy block (stored as the verbatim mode name)
     mode: AgentMode;
     /**
-     * Canonicalized payloads JSON (recursive sorted-key stringify) used for
-     * stable hashing. Empty string means "no payloads provided".
+     * Listing of `.tryout/*.json` files (sorted by name). The model reads them
+     * on demand via `file_read` — we surface only the listing in the user
+     * prompt to avoid dumping (potentially large) saved request bodies on
+     * every turn. Empty array = no `.tryout/` folder or no payload files.
      */
-    payloadsCanonical: string;
+    tryoutPayloads: TryoutPayloadEntry[];
 }
 
 interface SessionContextWithCatalog {
@@ -481,8 +492,8 @@ export interface SessionContextBlockHashes {
 
 /**
  * Recursive stable JSON stringifier — sorts object keys deterministically so
- * two semantically-equal payloads produce the same hash regardless of insertion
- * order. Used to canonicalize `params.payloads` before hashing.
+ * semantically-equal objects produce identical strings regardless of insertion
+ * order. Used by `hashJson` so block hashes are reproducible across processes.
  */
 function stableStringify(value: unknown): string {
     if (value === null || typeof value !== 'object') {
@@ -496,20 +507,45 @@ function stableStringify(value: unknown): string {
     return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(obj[k])).join(',') + '}';
 }
 
-function canonicalizePayloads(raw: string | undefined): string {
-    if (!raw) {
-        return '';
-    }
-    try {
-        return stableStringify(JSON.parse(raw));
-    } catch {
-        // Not JSON — fall back to the raw string so hashing still works.
-        return raw;
-    }
-}
-
 function hashJson(value: unknown): string {
     return crypto.createHash('sha256').update(stableStringify(value)).digest('hex').slice(0, 16);
+}
+
+/**
+ * Scan `.tryout/*.json` and return a sorted listing for change detection.
+ * mtimeMs+size is enough — IDE writes always bump mtime, and the cost of a
+ * false-positive re-injection is one extra reminder (negligible) while the
+ * cost of reading every payload's bytes per turn would be real for users
+ * who save large request bodies.
+ */
+function scanTryoutPayloads(projectPath: string): TryoutPayloadEntry[] {
+    const tryoutDir = path.join(projectPath, '.tryout');
+    if (!fs.existsSync(tryoutDir)) {
+        return [];
+    }
+    try {
+        const files = fs.readdirSync(tryoutDir).filter(f => f.endsWith('.json'));
+        const result: TryoutPayloadEntry[] = [];
+        for (const file of files) {
+            const filePath = path.join(tryoutDir, file);
+            try {
+                const stat = fs.statSync(filePath);
+                if (!stat.isFile()) {
+                    continue;
+                }
+                result.push({ name: file, mtimeMs: stat.mtimeMs, size: stat.size });
+            } catch {
+                // Skip unreadable entries silently — model can still file_read by name.
+            }
+        }
+        return result.sort((a, b) => a.name.localeCompare(b.name));
+    } catch (error) {
+        logDebug(
+            `[Prompt] Failed to scan .tryout/ for project ${projectPath}: ` +
+            `${error instanceof Error ? error.message : String(error)}`
+        );
+        return [];
+    }
 }
 
 async function buildSessionContextSnapshot(params: SessionContextParams): Promise<SessionContextWithCatalog> {
@@ -559,7 +595,7 @@ async function buildSessionContextSnapshot(params: SessionContextParams): Promis
             bundledInboundIds: catalog.bundledInboundIds.join(', '),
             webSearchUnavailable: params.webSearchUnavailable === true,
             mode: params.mode || 'edit',
-            payloadsCanonical: canonicalizePayloads(params.payloads),
+            tryoutPayloads: scanTryoutPayloads(params.projectPath),
         },
         catalogWarnings: catalog.warnings,
         catalogStoreStatus: catalog.storeStatus,
@@ -598,7 +634,11 @@ function deriveBlockHashes(snapshot: SessionContextSnapshot): SessionContextBloc
         }),
         webAvailability: hashJson({ webSearchUnavailable: snapshot.webSearchUnavailable }),
         modePolicy: snapshot.mode,
-        payloads: snapshot.payloadsCanonical ? hashJson(snapshot.payloadsCanonical) : undefined,
+        // Hash over the file listing — adding/removing/modifying any
+        // .tryout/*.json flips the block hash and triggers a re-injection.
+        // `undefined` when the folder is empty so 'cleared' fires correctly
+        // when the user wipes all saved payloads.
+        payloads: snapshot.tryoutPayloads.length > 0 ? hashJson(snapshot.tryoutPayloads) : undefined,
     };
 }
 
@@ -738,21 +778,30 @@ function buildFullModePolicyBlockText(
     return fullPolicy.trim();
 }
 
-function buildPayloadsBlockText(payloads: string | undefined, status: BlockInjectionStatus): string | undefined {
+/**
+ * Render the tryout payloads block. We surface only a *listing* of
+ * `.tryout/*.json` files (not their contents) — the model reads the relevant
+ * file on demand via `file_read`. See system.ts "Tryout payloads" section
+ * for file-format details and read-on-demand guidance.
+ */
+function buildPayloadsBlockText(
+    files: TryoutPayloadEntry[],
+    status: BlockInjectionStatus,
+): string | undefined {
     if (status === 'cleared') {
-        // Payloads were present on a prior turn but absent now — model still
-        // has the stale "# Preconfigured Values" reminder in context, so
-        // explicitly tell it to discard those values.
-        return `# Preconfigured Values [removed]
-The preconfigured values referenced in earlier turns are no longer present in the Low-Code IDE. Discard them and do not rely on any prior preconfigured values until a new set is provided.`;
+        // Listing was non-empty on a prior turn but `.tryout/` is now empty —
+        // model still has the stale listing in context.
+        return `# Tryout payloads [removed]
+The .tryout/ folder no longer contains saved sample request payloads. Discard any prior payload references and do not read .tryout/*.json until new ones are saved.`;
     }
-    if (status === 'omit' || !payloads) {
+    if (status === 'omit' || files.length === 0) {
         return undefined;
     }
     const headerSuffix = status === 're-injection' ? ` ${CONTEXT_UPDATED}` : '';
-    return `# Preconfigured Values${headerSuffix}
-${payloads}
-These are preconfigured values in the Low-Code IDE that should be accessed using Synapse expressions in the integration flow. Always use Synapse expressions when referring to these values.`;
+    const list = files.map(f => `  - .tryout/${f.name}`).join('\n');
+    return `# Tryout payloads${headerSuffix}
+The user has saved sample request payloads in .tryout/ (one file per artifact). Use file_read on the relevant file ONLY when you need to reason about runtime inputs (expression mapping, body shape, query/path params, field names) — do not read otherwise. See the system prompt's "Tryout payloads" section for the file format and how to pick the default request.
+${list}`;
 }
 
 // ============================================================================
@@ -792,7 +841,6 @@ export async function getUserPrompt(params: UserPromptParams): Promise<UserPromp
             webSearchUnavailable: params.webSearchUnavailable,
             loginMethod: params.loginMethod,
             mode,
-            payloads: params.payloads,
         });
     const { snapshot } = sessionContext;
 
@@ -815,7 +863,7 @@ export async function getUserPrompt(params: UserPromptParams): Promise<UserPromp
     const envBlock = buildEnvBlockText(snapshot, blockStatuses.env);
     const connectorsBlock = buildConnectorsBlockText(snapshot, blockStatuses.connectors);
     const webAvailabilityBlock = buildWebAvailabilityBlockText(snapshot, blockStatuses.webAvailability);
-    const payloadsBlock = buildPayloadsBlockText(params.payloads, blockStatuses.payloads);
+    const payloadsBlock = buildPayloadsBlockText(snapshot.tryoutPayloads, blockStatuses.payloads);
     const fullModePolicyBlock = buildFullModePolicyBlockText(
         mode,
         fullModePolicy,

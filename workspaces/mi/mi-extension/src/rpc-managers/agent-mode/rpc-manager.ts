@@ -469,26 +469,6 @@ export class MIAgentPanelRpcManager implements MIAgentPanelAPI {
         return events;
     }
 
-    /**
-     * Pre-fetch preconfigured input payloads from the diagram side. The string
-     * is stable across the same project state — agent.ts hashes it (canonicalized)
-     * to gate the "Preconfigured Values" block. If the diagram RPC fails, we
-     * fall back to undefined so the block is simply omitted (no crash).
-     */
-    private async resolvePreconfiguredPayloads(): Promise<string | undefined> {
-        try {
-            const diagramRpcManager = new MiDiagramRpcManager(this.projectUri);
-            const defaultPayloads = await diagramRpcManager.getAllInputDefaultPayloads();
-            if (!defaultPayloads || (typeof defaultPayloads === 'object' && Object.keys(defaultPayloads).length === 0)) {
-                return undefined;
-            }
-            return JSON.stringify(defaultPayloads, null, 2);
-        } catch (error) {
-            logError('[AgentPanel] Failed to resolve preconfigured payloads; omitting block', error);
-            return undefined;
-        }
-    }
-
     private isSafeArtifactPathSegment(segment: string): boolean {
         const value = segment.trim();
         if (!value) {
@@ -818,11 +798,6 @@ export class MIAgentPanelRpcManager implements MIAgentPanelAPI {
 
             let latestStopModelMessages: SendAgentMessageResponse['modelMessages'];
 
-            // Pre-resolve preconfigured payloads server-side (the legacy copilot path
-            // does the same in `rpc-managers/ai-features/utils.ts`). Hashed by the
-            // agent so the block is only re-injected when payloads actually change.
-            const preconfiguredPayloads = await this.resolvePreconfiguredPayloads();
-
             const runAgent = async (query: string) => {
                 const abortController = createAgentAbortController();
                 this.activeAbortControllers.add(abortController);
@@ -849,7 +824,6 @@ export class MIAgentPanelRpcManager implements MIAgentPanelAPI {
                             },
                             undoCheckpointManager,
                             modelSettings: this.currentModelSettings,
-                            payloads: preconfiguredPayloads,
                             onStepPersisted: () => this.eventHandler.stepCompleted(),
                         },
                         (event: AgentEvent) => {

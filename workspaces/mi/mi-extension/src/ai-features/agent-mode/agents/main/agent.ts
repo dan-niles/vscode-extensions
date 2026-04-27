@@ -20,7 +20,7 @@
 // Dev Feature Flags
 // ============================================================================
 export const ENABLE_LANGFUSE = false; // Set to false to disable Langfuse tracing
-export const ENABLE_DEVTOOLS = true; // Set to true to enable AI SDK DevTools (local development only!)
+export const ENABLE_DEVTOOLS = false; // Set to true to enable AI SDK DevTools (local development only!)
 export const ENABLE_NATIVE_COMPACTION = true; // Set to true to enable Anthropic native server-side compaction (auto-summarizes when context grows large)
 
 // Native compaction trigger threshold in tokens.
@@ -150,12 +150,6 @@ export interface AgentRequest {
     undoCheckpointManager?: AgentUndoCheckpointManager;
     /** Model settings for this session (main model + sub-agent model overrides) */
     modelSettings?: ModelSettings;
-    /**
-     * Pre-configured payload values (JSON-stringified) from the Low-Code IDE.
-     * Surfaced to the agent in a tracked `<system-reminder>` and re-injected
-     * only when its canonicalized hash drifts (see `SessionMetadata.sessionContextBlocks.payloads`).
-     */
-    payloads?: string;
     /** Called after a stream step is persisted to JSONL history */
     onStepPersisted?: () => void;
 }
@@ -598,7 +592,6 @@ export async function executeAgent(
             webSearchUnavailable,
             loginMethod,
             mode: request.mode || 'edit',
-            payloads: request.payloads,
         });
         const currentBlockHashes = sessionContextResult.hashes;
         const sessionMetadata = request.chatHistoryManager
@@ -637,7 +630,6 @@ export async function executeAgent(
             runtimeVersionDetected: systemPromptSelection.runtimeVersionDetected,
             webSearchUnavailable,
             loginMethod,
-            payloads: request.payloads,
             blockStatuses,
             previousMode,
             precomputedContext: sessionContextResult,
