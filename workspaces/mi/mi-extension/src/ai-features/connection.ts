@@ -73,7 +73,6 @@ export const getBedrockValidationModelId = (region: string): string => {
 };
 
 let cachedAnthropic: ReturnType<typeof createAnthropic> | null = null;
-let cachedBedrock: ReturnType<typeof createBedrockAnthropic> | null = null;
 let cachedAuthMethod: LoginMethod | null = null;
 let reLoginPromptInFlight = false;
 
@@ -318,8 +317,8 @@ const getBedrockProvider = async (): Promise<{
         throw new Error("Authentication failed: Unable to get AWS Bedrock credentials");
     }
 
-    // Always recreate to ensure fresh credentials
-    cachedBedrock = credentials.authType === 'api_key'
+    // Always recreate to ensure fresh credentials.
+    const provider = credentials.authType === 'api_key'
         ? createBedrockAnthropic({
             region: credentials.region,
             apiKey: credentials.apiKey,
@@ -331,7 +330,7 @@ const getBedrockProvider = async (): Promise<{
             sessionToken: credentials.sessionToken,
         });
 
-    return { provider: cachedBedrock, credentials };
+    return { provider, credentials };
 };
 
 export const getAnthropicClient = async (model: AnthropicModel): Promise<any> => {

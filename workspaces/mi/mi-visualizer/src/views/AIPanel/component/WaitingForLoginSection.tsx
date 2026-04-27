@@ -603,16 +603,23 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
                         </InputRow>
                     </InputContainer>
                     <HelperText>
-                        <a
-                            href="#"
-                            onClick={(e) => {
-                                e.preventDefault();
+                        <button
+                            type="button"
+                            onClick={() => {
                                 rpcClient.getMiVisualizerRpcClient().openExternal({ uri: "https://app.tavily.com" });
                             }}
-                            style={{ color: "var(--vscode-textLink-foreground)" }}
+                            style={{
+                                color: "var(--vscode-textLink-foreground)",
+                                background: "transparent",
+                                border: "none",
+                                padding: 0,
+                                cursor: "pointer",
+                                font: "inherit",
+                                textDecoration: "underline",
+                            }}
                         >
                             Get a free Tavily API key
-                        </a>{" "}— required for web_search and web_fetch on AWS Bedrock. You can add or change it later in Settings.
+                        </button>{" "}— required for web_search and web_fetch on AWS Bedrock. You can add or change it later in Settings.
                     </HelperText>
 
                     {displayError && (

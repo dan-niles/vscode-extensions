@@ -51,6 +51,55 @@ function sanitizeDomainList(domains?: string[]): string[] | undefined {
     return sanitized.length > 0 ? sanitized : undefined;
 }
 
+/**
+ * Match a hostname against a single allow/block domain entry. Treats `domain`
+ * as covering itself and all subdomains, so `github.com` matches both
+ * `github.com` and `api.github.com`.
+ */
+function hostnameMatchesDomain(hostname: string, domain: string): boolean {
+    const h = hostname.toLowerCase();
+    const d = domain.trim().toLowerCase().replace(/^\./, '');
+    return h === d || h.endsWith(`.${d}`);
+}
+
+/**
+ * Enforce `allowed_domains` / `blocked_domains` against a single URL. Tavily
+ * Extract takes one URL (not a search-style filter), so the lists must be
+ * applied client-side or they'd be a no-op — exposing them in the schema
+ * without enforcement gives the model a false sense of safety.
+ */
+function checkUrlAgainstDomainLists(
+    urlString: string,
+    allowedDomains?: string[],
+    blockedDomains?: string[],
+): { ok: true } | { ok: false; reason: string } {
+    let hostname: string;
+    try {
+        hostname = new URL(urlString).hostname.toLowerCase();
+    } catch {
+        // Schema validates URL shape; on parse failure here, defer to Tavily.
+        return { ok: true };
+    }
+
+    const allowed = sanitizeDomainList(allowedDomains);
+    if (allowed && !allowed.some((d) => hostnameMatchesDomain(hostname, d))) {
+        return {
+            ok: false,
+            reason: `URL hostname "${hostname}" is not in allowed_domains [${allowed.join(', ')}].`,
+        };
+    }
+
+    const blocked = sanitizeDomainList(blockedDomains);
+    if (blocked && blocked.some((d) => hostnameMatchesDomain(hostname, d))) {
+        return {
+            ok: false,
+            reason: `URL hostname "${hostname}" is in blocked_domains [${blocked.join(', ')}].`,
+        };
+    }
+
+    return { ok: true };
+}
+
 // ============================================================================
 // Tavily-backed implementations (AWS Bedrock branch only)
 // ============================================================================
@@ -106,6 +155,9 @@ async function runTavilySearch(
     }
 }
 
+// Match the Anthropic webFetch maxContentTokens=32000 cap (~4 chars/token).
+const TAVILY_EXTRACT_MAX_CHARS = 128_000;
+
 async function runTavilyExtract(apiKey: string, url: string, taskPrompt?: string): Promise<ToolResult> {
     try {
         const client = createTavilyClient({ apiKey });
@@ -135,9 +187,13 @@ async function runTavilyExtract(apiKey: string, url: string, taskPrompt?: string
         }
 
         const header = taskPrompt ? `Task: ${taskPrompt}\nURL: ${url}\n\n` : `URL: ${url}\n\n`;
+        const rawContent: string = first.rawContent;
+        const content = rawContent.length > TAVILY_EXTRACT_MAX_CHARS
+            ? rawContent.slice(0, TAVILY_EXTRACT_MAX_CHARS) + '\n\n[CONTENT TRUNCATED]'
+            : rawContent;
         return {
             success: true,
-            message: `${header}${first.rawContent}`,
+            message: `${header}${content}`,
         };
     } catch (error: any) {
         logError('[WebFetchTool] Tavily extract failed', error);
@@ -180,6 +236,15 @@ export function createWebFetchExecute(tavilyKey: string): WebFetchExecuteFn {
             }
         } catch {
             // URL validity is enforced by the input schema; ignore parse failures here.
+        }
+
+        const domainCheck = checkUrlAgainstDomainLists(args.url, args.allowed_domains, args.blocked_domains);
+        if (!domainCheck.ok) {
+            return {
+                success: false,
+                message: `Web fetch refused: ${domainCheck.reason}`,
+                error: 'WEB_FETCH_DOMAIN_BLOCKED',
+            };
         }
 
         logInfo(`[WebFetchTool] Tavily extract: ${args.url}`);

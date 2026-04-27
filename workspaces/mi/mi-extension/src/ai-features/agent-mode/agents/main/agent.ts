@@ -1270,11 +1270,10 @@ export async function executeAgent(
                     cleanupStreamLifecycle?.();
                     const errorMsg = getErrorMessage(part.error);
                     logError(`[Agent] Stream error: ${errorMsg}`);
+                    // Structured diagnostics only — getErrorDiagnostics whitelists/truncates
+                    // the safe provider fields. A raw JSON dump would re-introduce the leak
+                    // surface (requestBodyValues, unsanitized headers, etc.) at any log level.
                     logError(`[Agent] Stream error diagnostics: ${getErrorDiagnostics(part.error)}`);
-                    try {
-                        const raw = JSON.stringify(part.error, Object.getOwnPropertyNames(part.error as any));
-                        logError(`[Agent] Stream error raw: ${raw.length > 4000 ? raw.slice(0, 4000) + '…[truncated]' : raw}`);
-                    } catch {}
                     emitEvent({
                         type: 'error',
                         error: errorMsg,

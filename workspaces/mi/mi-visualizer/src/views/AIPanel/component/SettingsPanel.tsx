@@ -116,6 +116,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
         if (!rpcClient) {
             return;
         }
+        // No-op when the toggle already reflects the requested state — clicking
+        // "On" while a key is saved should not re-open the input.
+        const currentlyOn = !!tavilyKey || tavilyInputOpen;
+        if (enabled === currentlyOn) {
+            return;
+        }
         if (enabled) {
             // Reveal input. If a key is already saved we keep it — the toggle simply
             // reflects the existing enabled state. If not, the user needs to enter one.
@@ -332,6 +338,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
                                                     setTavilyStatus({ kind: 'idle' });
                                                 }
                                             }}
+                                            aria-label="Tavily API key"
                                             placeholder="tvly-..."
                                             className="flex-1 px-2 py-1 text-[12px] rounded-md"
                                             style={{

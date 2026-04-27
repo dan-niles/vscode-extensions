@@ -147,7 +147,7 @@ ${Object.entries(DEFERRED_TOOL_DESCRIPTIONS).map(([name, desc]) => `- ${name}: $
 
 ## Web tools
 - ${WEB_SEARCH_TOOL_NAME}: external research. Prefer MI docs (allowed_domains=["mi.docs.wso2.com"]), also use GitHub issues, Stack Overflow when useful.
-- ${WEB_FETCH_TOOL_NAME}: fetch URL content (not JS-rendered sites; MI docs is JS-rendered, so use ${WEB_SEARCH_TOOL_NAME} for those). Both require user approval.
+- ${WEB_FETCH_TOOL_NAME}: fetch URL content (not JS-rendered sites; MI docs is JS-rendered, so use ${WEB_SEARCH_TOOL_NAME} for those).
 
 ## DeepWiki by Cognition.ai/Devin (${DEEPWIKI_ASK_QUESTION_TOOL_NAME})
 - DeepWiki (deepwiki.com) indexes GitHub repos and provides AI-powered Q&A grounded in source code. Use for MI/Synapse internals, source-level behavior, and implementation details not covered by built-in context.

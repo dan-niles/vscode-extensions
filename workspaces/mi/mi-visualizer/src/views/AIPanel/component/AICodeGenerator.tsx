@@ -54,19 +54,30 @@ export function AICodeGenerator({ isUsageExceeded = false }: AICodeGeneratorProp
 
   // Check BYOK status for settings panel
   useEffect(() => {
+      let cancelled = false;
       const checkByok = async () => {
           if (!rpcClient) {
               return;
           }
-          const [hasApiKey, machineView] = await Promise.all([
-              rpcClient.getMiAiPanelRpcClient().hasAnthropicApiKey(),
-              rpcClient.getAIVisualizerState(),
-          ]);
-          const isBedrock = machineView?.loginMethod === LoginMethod.AWS_BEDROCK;
-          setIsByok(!!hasApiKey || isBedrock);
-          setIsAwsBedrock(isBedrock);
+          try {
+              const [hasApiKey, machineView] = await Promise.all([
+                  rpcClient.getMiAiPanelRpcClient().hasAnthropicApiKey(),
+                  rpcClient.getAIVisualizerState(),
+              ]);
+              if (cancelled) {
+                  return;
+              }
+              const isBedrock = machineView?.loginMethod === LoginMethod.AWS_BEDROCK;
+              setIsByok(!!hasApiKey || isBedrock);
+              setIsAwsBedrock(isBedrock);
+          } catch (error) {
+              console.error('[AICodeGenerator] Failed to resolve BYOK / Bedrock state', error);
+          }
       };
       checkByok();
+      return () => {
+          cancelled = true;
+      };
   }, [rpcClient]);
 
   const beginProgrammaticScroll = (durationMs: number) => {

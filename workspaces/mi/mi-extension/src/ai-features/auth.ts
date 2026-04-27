@@ -591,6 +591,19 @@ const validateBedrockRegion = (region: string): void => {
     if (!/^[a-z]{2}(?:-gov)?-[a-z]+-\d+$/.test(region)) {
         throw new Error('Invalid AWS region. Please enter a region like us-east-1 or us-west-2.');
     }
+
+    // The `global.` Bedrock inference profile (used by getBedrockValidationModelId
+    // / getBedrockRegionalPrefix in connection.ts) is only published in the
+    // commercial AWS partition. GovCloud (`us-gov-*`) and China (`cn-*`) regions
+    // would silently fail at runtime with "model not found", so reject up front.
+    if (region.startsWith('us-gov-') || region.startsWith('cn-')) {
+        throw new Error(
+            `AWS region "${region}" is not supported. The Anthropic models on Bedrock ` +
+            `(Haiku 4.5, Sonnet 4.6, Opus 4.7) are only available via the global. ` +
+            `inference profile in the commercial AWS partition — GovCloud and China ` +
+            `partitions are not supported. Use a commercial region like us-east-1 or eu-west-1.`
+        );
+    }
 };
 
 const getBedrockValidationModelId = async (region: string): Promise<string> => {

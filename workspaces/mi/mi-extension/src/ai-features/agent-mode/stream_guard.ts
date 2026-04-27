@@ -126,12 +126,42 @@ export function getErrorDiagnostics(error: unknown): string {
         }
         if (r.data !== undefined) {
             try {
-                fields.data = typeof r.data === 'string' ? r.data : JSON.stringify(r.data);
+                const dataStr = typeof r.data === 'string' ? r.data : JSON.stringify(r.data);
+                fields.data = dataStr.length > 2000
+                    ? dataStr.slice(0, 2000) + '…[truncated]'
+                    : dataStr;
             } catch {
                 fields.data = '[unserializable]';
             }
         }
-        if (r.responseHeaders !== undefined) fields.responseHeaders = r.responseHeaders;
+        if (r.responseHeaders !== undefined && r.responseHeaders !== null && typeof r.responseHeaders === 'object') {
+            // Whitelist known-safe headers — set-cookie, authorization echoes,
+            // x-amz-security-token, etc. must never reach logs.
+            const safeKeys = new Set([
+                'content-type',
+                'content-length',
+                'date',
+                'x-request-id',
+                'request-id',
+                'retry-after',
+                'x-ratelimit-limit',
+                'x-ratelimit-remaining',
+                'x-ratelimit-reset',
+                'anthropic-ratelimit-requests-limit',
+                'anthropic-ratelimit-requests-remaining',
+                'anthropic-ratelimit-requests-reset',
+                'anthropic-ratelimit-tokens-limit',
+                'anthropic-ratelimit-tokens-remaining',
+                'anthropic-ratelimit-tokens-reset',
+            ]);
+            const filtered: Record<string, unknown> = {};
+            for (const [key, value] of Object.entries(r.responseHeaders as Record<string, unknown>)) {
+                if (safeKeys.has(key.toLowerCase())) {
+                    filtered[key] = value;
+                }
+            }
+            fields.responseHeaders = filtered;
+        }
         return fields;
     };
 
