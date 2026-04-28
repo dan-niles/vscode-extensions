@@ -378,7 +378,7 @@ export function createContextTool(execute: ContextExecuteFn) {
         description: `Loads deep reference context on demand to avoid prompt bloat.
             Use context_name in the form "topic" or "topic:section".
             Example: "synapse-expression-spec:type_coercion".
-            Note: AI connector context requires MI runtime 4.4.0 or newer.`,
+            Note: Some contexts are runtime-gated and require the MI runtime version specified by their minRuntimeVersion (e.g., MI runtime ${RUNTIME_VERSION_440} or newer).`,
         inputSchema: contextInputSchema,
         execute,
     });

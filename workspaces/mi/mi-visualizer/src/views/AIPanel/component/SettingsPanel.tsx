@@ -331,7 +331,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
                     Anthropic's first-party web tools and needs no UI. */}
                 {isAwsBedrock && (
                 <SettingsSection title="Web Search">
-                    <>
                             {/* Bedrock: enable toggle (gated on Tavily key). */}
                             <div className="flex items-center justify-between">
                                 <div className="pr-3">
@@ -475,7 +474,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
                                 <Codicon name="link-external" />
                                 Or subscribe via AWS Marketplace
                             </button>
-                    </>
                 </SettingsSection>
                 )}
 

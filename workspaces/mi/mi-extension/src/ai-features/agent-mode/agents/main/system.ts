@@ -24,6 +24,7 @@ import {
     MANAGE_CONNECTOR_TOOL_NAME,
     VALIDATE_CODE_TOOL_NAME,
     CREATE_DATA_MAPPER_TOOL_NAME,
+    GENERATE_DATA_MAPPING_TOOL_NAME,
     SUBAGENT_TOOL_NAME,
     ASK_USER_TOOL_NAME,
     ENTER_PLAN_MODE_TOOL_NAME,
@@ -298,7 +299,7 @@ Proactively load reference contexts when you need deeper knowledge beyond <SYNAP
 
 **Project Resources**
 - \`registry-resource-guide\` [overview, artifact_xml, registry_paths, media_types, properties, common_patterns, secure_vault, config_properties] — registry resources, artifact.xml format, gov:/conf: paths, secure vault \`{wso2:vault-lookup('alias')}\`, config.properties registration as config/property artifact for \`\${configs.*}\` access
-- \`data-mapper-reference\` [overview, typescript_rules, dmutils_functions, dynamic_arrays, when_to_use_dmutils, array_handling, tool_usage] — TypeScript data mapper \`.ts\` file format, dmUtils helper signatures, **TS2556 dynamic-array spread pitfall** (\`dmUtils.sum(...arr)\` fails — use \`arr.reduce(...)\`), array handling patterns. Load BEFORE editing an existing \`.ts\` mapping file. Generation should still go through \`generate_data_mapping\`. Requires MI runtime 4.4.0+
+- \`data-mapper-reference\` [overview, typescript_rules, dmutils_functions, dynamic_arrays, when_to_use_dmutils, array_handling, tool_usage] — TypeScript data mapper \`.ts\` file format, dmUtils helper signatures, **TS2556 dynamic-array spread pitfall** (\`dmUtils.sum(...arr)\` fails — use \`arr.reduce(...)\`), array handling patterns. Load BEFORE editing an existing \`.ts\` mapping file. Generation should still go through \`${GENERATE_DATA_MAPPING_TOOL_NAME}\`. Requires MI runtime 4.4.0+
 
 **Testing**
 - \`unit-test-reference\` [guidelines, supporting_artifacts, connector_resources, assertions, mock_services, xsd_schema, examples, best_practices] — unit tests, mock services, assertions by artifact type

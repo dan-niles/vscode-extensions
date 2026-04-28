@@ -16,7 +16,7 @@
  * under the License.
  */
 
-import { CREATE_DATA_MAPPER_TOOL_NAME } from "../tools/types";
+import { CREATE_DATA_MAPPER_TOOL_NAME, GENERATE_DATA_MAPPING_TOOL_NAME } from "../tools/types";
 import { SYNAPSE_EXPRESSION_GUIDE } from "./synapse_expression_guide"
 
 export const SYNAPSE_GUIDE = `
@@ -399,7 +399,7 @@ Data mappers transform data between input and output schemas using TypeScript. T
 
 **Tool routing (always prefer tools over hand-writing):**
 - New mapper → use \`${CREATE_DATA_MAPPER_TOOL_NAME}\` (scaffolds folder, \`.ts\` file, and \`dm-utils.ts\`).
-- Generate / fill the \`mapFunction\` body → use \`generate_data_mapping\`.
+- Generate / fill the \`mapFunction\` body → use \`${GENERATE_DATA_MAPPING_TOOL_NAME}\`.
 - Direct \`file_edit\` on the \`.ts\` file is only for targeted single-field tweaks, user-dictated formula changes, or fixing a TS2556 spread error.
 
 **Before editing an existing \`.ts\` mapping file**, load \`data-mapper-reference\` via \`load_context_reference\` for the dmUtils API, the TS2556 dynamic-array spread rule (use \`arr.reduce(...)\`, never \`dmUtils.sum(...arr)\`), and the file format. Sections: \`overview\`, \`typescript_rules\`, \`dmutils_functions\`, \`dynamic_arrays\`, \`when_to_use_dmutils\`, \`array_handling\`, \`tool_usage\`.
