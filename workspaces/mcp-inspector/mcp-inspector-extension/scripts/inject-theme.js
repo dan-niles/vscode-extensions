@@ -74,8 +74,9 @@ const CUSTOM_CSS = `    <!-- Dynamic Theme Injection Placeholder -->
 
       // Listen for theme color messages from parent
       window.addEventListener('message', (event) => {
+        if (event.source !== window.parent) return;
         const message = event.data;
-        if (message.type === 'vscode-theme-colors') {
+        if (message && message.type === 'vscode-theme-colors') {
           // Sync the inspector's dark-mode class with VSCode's theme so its
           // own theme tokens (:root for light, .dark for dark) align with our overrides.
           if (typeof message.isDark === 'boolean') {

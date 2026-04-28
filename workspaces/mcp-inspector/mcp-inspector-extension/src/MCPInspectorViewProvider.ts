@@ -224,30 +224,50 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
         const contrastBorder = computedStyle.getPropertyValue('--vscode-contrastBorder').trim();
         const activityBarBorder = computedStyle.getPropertyValue('--vscode-activityBar-border').trim();
         const inputBorder = computedStyle.getPropertyValue('--vscode-input-border').trim();
-        const border = panelBorder || widgetBorder || contrastBorder || activityBarBorder;
+
+        const bodyClass = document.body.className || '';
+        const isHighContrast = bodyClass.includes('vscode-high-contrast');
+        const isDark = bodyClass.includes('vscode-dark') || (isHighContrast && !bodyClass.includes('vscode-high-contrast-light'));
+
+        // Prefer contrastBorder in HC: surfaces blend with body there, so the border carries differentiation.
+        const border = isHighContrast
+          ? (contrastBorder || panelBorder || widgetBorder || activityBarBorder)
+          : (panelBorder || widgetBorder || contrastBorder || activityBarBorder);
         const inputBorderResolved = inputBorder || border;
         const errorBg = computedStyle.getPropertyValue('--vscode-inputValidation-errorBackground').trim();
         const errorFg = computedStyle.getPropertyValue('--vscode-inputValidation-errorForeground').trim() || fg;
         const inactiveTabBg = computedStyle.getPropertyValue('--vscode-tab-inactiveBackground').trim();
-        // Drop fully-transparent or low-alpha values; alpha is dropped by colorToHsl
-        // and would collapse rgba(white, 0.1)-style overlays to bright HSL.
+        // Drop transparent / low-alpha values so they don't degrade to gray in colorToHsl.
         const opaque = (c) => {
           if (!c) return '';
-          if (/rgba\\([^)]*,\\s*0(\\.0*)?\\s*\\)$/.test(c)) return '';
-          const m = c.match(/rgba\\(\\s*\\d+\\s*,\\s*\\d+\\s*,\\s*\\d+\\s*,\\s*([\\d.]+)\\s*\\)$/);
+          if (/^\\s*transparent\\s*$/i.test(c)) return '';
+          let m = c.match(/^#[0-9a-f]{6}([0-9a-f]{2})$/i);
+          if (m && parseInt(m[1], 16) < 128) return '';
+          m = c.match(/^[a-z]+\\(\\s*[\\d.]+%?\\s*,\\s*[\\d.]+%?\\s*,\\s*[\\d.]+%?\\s*,\\s*([\\d.]+)\\s*\\)\\s*$/i);
+          if (m && parseFloat(m[1]) < 0.5) return '';
+          m = c.match(/^[a-z]+\\([^)]*\\/\\s*([\\d.]+)\\s*\\)\\s*$/i);
           if (m && parseFloat(m[1]) < 0.5) return '';
           return c;
         };
         const widgetBg = opaque(computedStyle.getPropertyValue('--vscode-editorWidget-background').trim());
         const listHoverBg = opaque(computedStyle.getPropertyValue('--vscode-list-hoverBackground').trim());
 
-        const bodyClass = document.body.className || '';
-        const isHighContrast = bodyClass.includes('vscode-high-contrast');
-        const isDark = bodyClass.includes('vscode-dark') || (isHighContrast && !bodyClass.includes('vscode-high-contrast-light'));
-
         // In HC themes, surfaces should blend with the editor and rely on borders (contrastBorder)
         // for differentiation — coloured fills wash out or render invisible.
-        const subtleSurface = isHighContrast ? editorBg : (widgetBg || listHoverBg || buttonSecBg || inactiveTabBg);
+        let subtleSurface;
+        let subtleSurfaceFg = fg;
+        if (isHighContrast) {
+          subtleSurface = editorBg;
+        } else if (widgetBg) {
+          subtleSurface = widgetBg;
+        } else if (listHoverBg) {
+          subtleSurface = listHoverBg;
+        } else if (buttonSecBg) {
+          subtleSurface = buttonSecBg;
+          subtleSurfaceFg = buttonSecFg;
+        } else {
+          subtleSurface = inactiveTabBg;
+        }
         const subtleSurfaceMuted = isHighContrast ? editorBg : (widgetBg || listHoverBg || inactiveTabBg);
 
         // Send all theme colors (in same order as inject-theme.js uses them)
@@ -270,7 +290,7 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
 
           // Secondary colors
           secondary: subtleSurface,
-          secondaryForeground: fg,
+          secondaryForeground: subtleSurfaceFg,
 
           // Muted colors
           muted: subtleSurfaceMuted,
@@ -278,7 +298,7 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
 
           // Accent colors
           accent: subtleSurface,
-          accentForeground: fg,
+          accentForeground: subtleSurfaceFg,
 
           // Destructive colors
           destructive: errorBg,
@@ -299,7 +319,7 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
             type: 'vscode-theme-colors',
             colors: themeColors,
             isDark: isDark
-          }, '*');
+          }, 'http://localhost:${Ports.CLIENT}');
         }
       }
 
@@ -329,11 +349,17 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
         sendThemeColors();
       });
 
-      // Observe changes to the document element's style attribute
+      // Observe both <html> (CSS variable updates) and <body> (theme class flips).
       observer.observe(document.documentElement, {
         attributes: true,
         attributeFilter: ['style', 'class']
       });
+      if (document.body) {
+        observer.observe(document.body, {
+          attributes: true,
+          attributeFilter: ['class']
+        });
+      }
 
     })();
   </script>
