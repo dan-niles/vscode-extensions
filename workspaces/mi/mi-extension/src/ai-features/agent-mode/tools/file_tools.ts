@@ -53,6 +53,7 @@ import {
     RG_EXCLUDED_SENSITIVE_GLOBS,
 } from './ripgrep_runner';
 import { isSensitiveTokenName } from './shell_sandbox';
+import { stripAnsiAndControl } from '../../utils/sanitize-text';
 
 // ============================================================================
 // Validation Functions
@@ -878,8 +879,11 @@ export function createReadExecute(projectPath: string, readFiles?: Set<string>):
             }
         }
 
-        // Read file content
-        const content = fs.readFileSync(fullPath, 'utf-8');
+        // Read file content. Strip ANSI escapes / stray control bytes — common
+        // in captured Maven/Gradle/npm build logs. The Copilot proxy rejects
+        // tool-result strings containing raw 0x00-0x1F bytes with
+        // `unexpected control character in string`.
+        const content = stripAnsiAndControl(fs.readFileSync(fullPath, 'utf-8'));
 
         // Handle empty file
         if (content.trim().length === 0) {

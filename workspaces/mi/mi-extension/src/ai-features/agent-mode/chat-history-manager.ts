@@ -24,6 +24,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { logDebug, logError, logInfo } from '../copilot/logger';
 import { getToolAction, capitalizeAction } from './tool-action-mapper';
 import { BASH_TOOL_NAME } from './tools/types';
+import { stripAnsiAndControl } from '../utils/sanitize-text';
 import {
     AgentMode,
     CheckpointAnchorSummary,
@@ -936,6 +937,46 @@ export class ChatHistoryManager {
         includeUndoCheckpointEntry?: boolean;
         includeCheckpointAnchorEntry?: boolean;
     }): Promise<any[]> {
+        // Sanitize tool-result / text content blocks on load. Older sessions
+        // may have persisted raw control bytes (e.g. ANSI codes from a Maven
+        // `build.txt` read) that pass JSON.parse fine but trip the Copilot
+        // proxy's stricter validator on resend. Walking the message structure
+        // is cheap (each session has at most a few hundred entries) and lets
+        // existing sessions keep working without a manual edit.
+        const sanitizeContentBlock = (block: any): any => {
+            if (!block || typeof block !== 'object') {
+                return block;
+            }
+            if (block.type === 'text' && typeof block.text === 'string') {
+                return { ...block, text: stripAnsiAndControl(block.text) };
+            }
+            if (block.type === 'tool-result' && block.output && typeof block.output === 'object') {
+                const out = block.output;
+                if (typeof out.value === 'string') {
+                    return { ...block, output: { ...out, value: stripAnsiAndControl(out.value) } };
+                }
+                if (Array.isArray(out.value)) {
+                    return {
+                        ...block,
+                        output: {
+                            ...out,
+                            value: out.value.map((v: any) =>
+                                v && typeof v === 'object' && typeof v.text === 'string'
+                                    ? { ...v, text: stripAnsiAndControl(v.text) }
+                                    : v
+                            ),
+                        },
+                    };
+                }
+            }
+            return block;
+        };
+        const sanitizeMessage = (message: any): any => {
+            if (!message || typeof message !== 'object' || !Array.isArray(message.content)) {
+                return message;
+            }
+            return { ...message, content: message.content.map(sanitizeContentBlock) };
+        };
         try {
             const includeCompactSummaryEntry = options?.includeCompactSummaryEntry === true;
             const includeUndoCheckpointEntry = options?.includeUndoCheckpointEntry === true;
@@ -978,7 +1019,7 @@ export class ChatHistoryManager {
                 for (let i = lastCompactIndex + 1; i < allEntries.length; i++) {
                     const entry = allEntries[i];
                     if (entry.type === 'user' || entry.type === 'assistant' || entry.type === 'tool') {
-                        let modelMessage = entry.message;
+                        let modelMessage = sanitizeMessage(entry.message);
                         if (entry.chatId !== undefined && modelMessage && typeof modelMessage === 'object') {
                             modelMessage = {
                                 ...modelMessage,
@@ -1007,7 +1048,7 @@ export class ChatHistoryManager {
             const messages: any[] = [];
             for (const entry of allEntries) {
                 if (entry.type === 'user' || entry.type === 'assistant' || entry.type === 'tool') {
-                    let modelMessage = entry.message;
+                    let modelMessage = sanitizeMessage(entry.message);
                     if (entry.chatId !== undefined && modelMessage && typeof modelMessage === 'object') {
                         modelMessage = {
                             ...modelMessage,
