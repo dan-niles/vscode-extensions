@@ -213,11 +213,42 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
         const computedStyle = getComputedStyle(document.documentElement);
         const editorBg = computedStyle.getPropertyValue('--vscode-editor-background').trim();
         const editorFg = computedStyle.getPropertyValue('--vscode-editor-foreground').trim();
-        const buttonBg = computedStyle.getPropertyValue('--vscode-button-secondaryBackground').trim();
-        const border = computedStyle.getPropertyValue('--vscode-activityBar-border').trim();
+        const fg = computedStyle.getPropertyValue('--vscode-foreground').trim() || editorFg;
+        const buttonBg = computedStyle.getPropertyValue('--vscode-button-background').trim();
+        const buttonFg = computedStyle.getPropertyValue('--vscode-button-foreground').trim() || fg;
+        const buttonSecBg = computedStyle.getPropertyValue('--vscode-button-secondaryBackground').trim();
+        const buttonSecFg = computedStyle.getPropertyValue('--vscode-button-secondaryForeground').trim() || fg;
+        const descriptionFg = computedStyle.getPropertyValue('--vscode-descriptionForeground').trim() || fg;
+        const panelBorder = computedStyle.getPropertyValue('--vscode-panel-border').trim();
+        const widgetBorder = computedStyle.getPropertyValue('--vscode-widget-border').trim();
+        const contrastBorder = computedStyle.getPropertyValue('--vscode-contrastBorder').trim();
+        const activityBarBorder = computedStyle.getPropertyValue('--vscode-activityBar-border').trim();
+        const inputBorder = computedStyle.getPropertyValue('--vscode-input-border').trim();
+        const border = panelBorder || widgetBorder || contrastBorder || activityBarBorder;
+        const inputBorderResolved = inputBorder || border;
         const errorBg = computedStyle.getPropertyValue('--vscode-inputValidation-errorBackground').trim();
-        const activityBarBg = computedStyle.getPropertyValue('--vscode-activityBar-background').trim();
+        const errorFg = computedStyle.getPropertyValue('--vscode-inputValidation-errorForeground').trim() || fg;
         const inactiveTabBg = computedStyle.getPropertyValue('--vscode-tab-inactiveBackground').trim();
+        // Drop fully-transparent or low-alpha values; alpha is dropped by colorToHsl
+        // and would collapse rgba(white, 0.1)-style overlays to bright HSL.
+        const opaque = (c) => {
+          if (!c) return '';
+          if (/rgba\\([^)]*,\\s*0(\\.0*)?\\s*\\)$/.test(c)) return '';
+          const m = c.match(/rgba\\(\\s*\\d+\\s*,\\s*\\d+\\s*,\\s*\\d+\\s*,\\s*([\\d.]+)\\s*\\)$/);
+          if (m && parseFloat(m[1]) < 0.5) return '';
+          return c;
+        };
+        const widgetBg = opaque(computedStyle.getPropertyValue('--vscode-editorWidget-background').trim());
+        const listHoverBg = opaque(computedStyle.getPropertyValue('--vscode-list-hoverBackground').trim());
+
+        const bodyClass = document.body.className || '';
+        const isHighContrast = bodyClass.includes('vscode-high-contrast');
+        const isDark = bodyClass.includes('vscode-dark') || (isHighContrast && !bodyClass.includes('vscode-high-contrast-light'));
+
+        // In HC themes, surfaces should blend with the editor and rely on borders (contrastBorder)
+        // for differentiation — coloured fills wash out or render invisible.
+        const subtleSurface = isHighContrast ? editorBg : (widgetBg || listHoverBg || buttonSecBg || inactiveTabBg);
+        const subtleSurfaceMuted = isHighContrast ? editorBg : (widgetBg || listHoverBg || inactiveTabBg);
 
         // Send all theme colors (in same order as inject-theme.js uses them)
         const themeColors = {
@@ -234,28 +265,28 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
           popoverForeground: editorFg,
 
           // Primary colors
-          primary: activityBarBg,
-          primaryForeground: inactiveTabBg,
+          primary: buttonBg,
+          primaryForeground: buttonFg,
 
           // Secondary colors
-          secondary: inactiveTabBg,
-          secondaryForeground: activityBarBg,
+          secondary: subtleSurface,
+          secondaryForeground: fg,
 
           // Muted colors
-          muted: inactiveTabBg,
-          mutedForeground: activityBarBg,
+          muted: subtleSurfaceMuted,
+          mutedForeground: descriptionFg,
 
           // Accent colors
-          accent: inactiveTabBg,
-          accentForeground: activityBarBg,
+          accent: subtleSurface,
+          accentForeground: fg,
 
           // Destructive colors
           destructive: errorBg,
-          destructiveForeground: inactiveTabBg,
+          destructiveForeground: errorFg,
 
           // Input/Border/Ring
           border: border,
-          input: border,
+          input: inputBorderResolved,
           ring: editorFg,
 
           // Body styles
@@ -263,11 +294,11 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
           bodyColor: editorFg
         };
 
-
         if (iframe.contentWindow) {
           iframe.contentWindow.postMessage({
             type: 'vscode-theme-colors',
-            colors: themeColors
+            colors: themeColors,
+            isDark: isDark
           }, '*');
         }
       }
