@@ -621,6 +621,25 @@ export const WaitingForLoginSection = ({ loginMethod, isValidating = false, erro
                             }}
                         >
                             Get a free Tavily API key
+                        </button>
+                        {" "}or{" "}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                rpcClient.getMiVisualizerRpcClient().openExternal({ uri: "https://aws.amazon.com/marketplace/pp/prodview-myijjwd7qoky4" });
+                            }}
+                            style={{
+                                color: "var(--vscode-textLink-foreground)",
+                                background: "transparent",
+                                border: "none",
+                                padding: 0,
+                                cursor: "pointer",
+                                font: "inherit",
+                                textDecoration: "underline",
+                            }}
+                            title="Subscribe to Tavily Enterprise via AWS Marketplace and bill through your AWS account."
+                        >
+                            subscribe via AWS Marketplace
                         </button>{" "}— optional at login; needed later to enable web_search / web_fetch on AWS Bedrock. You can add or change it in Settings.
                     </HelperText>
 

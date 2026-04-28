@@ -16,7 +16,7 @@
  * under the License.
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Codicon } from "@wso2/ui-toolkit";
 import { useMICopilotContext } from "./MICopilotContext";
 import type { MainModelPreset, SubModelPreset } from "@wso2/mi-rpc-client/src/rpc-clients/agent-mode/rpc-client";
@@ -36,6 +36,11 @@ interface SettingsPanelProps {
 }
 
 const TAVILY_SIGNUP_URL = 'https://app.tavily.com';
+// AWS-procurement path for Tavily: subscribing via Marketplace bills through the
+// customer's AWS account but issues the same Tavily API key — drop-in compatible
+// with the standard BYOK flow. The Marketplace MCP-container listing is a
+// different SKU (not a REST endpoint) and isn't linked here.
+const TAVILY_AWS_MARKETPLACE_URL = 'https://aws.amazon.com/marketplace/pp/prodview-myijjwd7qoky4';
 
 const MAIN_AGENT_OPTIONS: { value: MainModelPreset; label: string; model: string; description: string }[] = [
     { value: "sonnet", label: "Normal", model: "Claude Sonnet 4.6", description: "Balanced quality, speed, and quota usage for everyday requests." },
@@ -83,6 +88,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
     // True when the user has just toggled the enable switch ON but hasn't saved a key yet.
     const [tavilyInputOpen, setTavilyInputOpen] = useState<boolean>(false);
     const [tavilyStatus, setTavilyStatus] = useState<{ kind: 'idle' | 'saving' | 'saved' | 'error'; message?: string }>({ kind: 'idle' });
+    // Serializes Tavily mutations so a save and a toggle-off can't race and leave UI/server out of sync.
+    const tavilyMutationLock = useRef(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -113,7 +120,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
      * Toggling OFF clears the saved key.
      */
     const handleBedrockWebSearchToggle = async (enabled: boolean) => {
-        if (!rpcClient) {
+        if (!rpcClient || tavilyMutationLock.current) {
             return;
         }
         // No-op when the toggle already reflects the requested state — clicking
@@ -133,6 +140,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
             return;
         }
         // Disabling: drop the saved key (and the approval-skip pref, which becomes meaningless).
+        tavilyMutationLock.current = true;
         setTavilyInputOpen(false);
         setTavilyDraft("");
         setTavilyStatus({ kind: 'saving' });
@@ -146,11 +154,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
             }
         } catch (err) {
             setTavilyStatus({ kind: 'error', message: err instanceof Error ? err.message : String(err) });
+        } finally {
+            tavilyMutationLock.current = false;
         }
     };
 
     const handleTavilySave = async () => {
-        if (!rpcClient) {
+        if (!rpcClient || tavilyMutationLock.current) {
             return;
         }
         const trimmed = tavilyDraft.trim();
@@ -158,6 +168,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
             setTavilyStatus({ kind: 'error', message: 'Enter a Tavily API key or toggle web search off to disable it.' });
             return;
         }
+        tavilyMutationLock.current = true;
         setTavilyStatus({ kind: 'saving' });
         try {
             const response = await rpcClient.getMiAiPanelRpcClient().setTavilyApiKey({ apiKey: trimmed });
@@ -170,6 +181,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
             }
         } catch (err) {
             setTavilyStatus({ kind: 'error', message: err instanceof Error ? err.message : String(err) });
+        } finally {
+            tavilyMutationLock.current = false;
         }
     };
 
@@ -181,6 +194,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
 
     const handleOpenTavilySignup = () => {
         rpcClient?.getMiVisualizerRpcClient().openExternal({ uri: TAVILY_SIGNUP_URL });
+    };
+
+    const handleOpenTavilyMarketplace = () => {
+        rpcClient?.getMiVisualizerRpcClient().openExternal({ uri: TAVILY_AWS_MARKETPLACE_URL });
     };
 
     const tavilyDirty = tavilyDraft.trim() !== tavilyKey.trim();
@@ -323,6 +340,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
                                     selected={isBedrockWebSearchOn ? "On" : "Off"}
                                     onSelect={(label) => handleBedrockWebSearchToggle(label === "On")}
                                     compact
+                                    disabled={tavilyStatus.kind === 'saving'}
                                 />
                             </div>
 
@@ -434,6 +452,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
                                 <Codicon name="link-external" />
                                 Get a free Tavily API key
                             </button>
+                            <button
+                                type="button"
+                                onClick={handleOpenTavilyMarketplace}
+                                className="text-[11px] inline-flex items-center gap-1 transition-colors"
+                                style={{
+                                    color: "var(--vscode-textLink-foreground)",
+                                    background: "transparent",
+                                    border: "none",
+                                    padding: 0,
+                                    cursor: "pointer",
+                                }}
+                                title="Subscribe to Tavily Enterprise via AWS Marketplace and bill through your AWS account. Paste the issued API key above."
+                            >
+                                <Codicon name="link-external" />
+                                Or subscribe via AWS Marketplace
+                            </button>
                     </>
                 </SettingsSection>
                 )}
@@ -513,11 +547,13 @@ function ToggleGroup({
     selected,
     onSelect,
     compact = false,
+    disabled = false,
 }: {
     options: string[];
     selected: string;
     onSelect: (value: string) => void;
     compact?: boolean;
+    disabled?: boolean;
 }) {
     return (
         <div
@@ -525,6 +561,7 @@ function ToggleGroup({
             style={{
                 backgroundColor: "var(--vscode-input-background)",
                 border: "1px solid var(--vscode-input-border)",
+                opacity: disabled ? 0.6 : 1,
             }}
         >
             {options.map((option) => {
@@ -535,11 +572,13 @@ function ToggleGroup({
                         type="button"
                         onClick={() => onSelect(option)}
                         aria-pressed={isSelected}
+                        disabled={disabled}
                         className={`${compact ? "px-3 py-1" : "flex-1 px-3 py-1.5"} rounded-md text-xs font-medium transition-all`}
                         style={{
                             backgroundColor: isSelected ? "var(--vscode-button-background)" : "transparent",
                             color: isSelected ? "var(--vscode-button-foreground)" : "var(--vscode-foreground)",
                             boxShadow: isSelected ? "0 1px 2px rgba(0,0,0,0.1)" : "none",
+                            cursor: disabled ? "not-allowed" : "pointer",
                         }}
                     >
                         {option}{isSelected ? " •" : ""}
