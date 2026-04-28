@@ -79,6 +79,10 @@ import {
     UNIT_TEST_REFERENCE_FULL,
     UNIT_TEST_REFERENCE_SECTIONS,
 } from '../context/unit-tests/unit_test_reference';
+import {
+    DATA_MAPPER_REFERENCE_FULL,
+    DATA_MAPPER_REFERENCE_SECTIONS,
+} from '../context/data_mapper_reference';
 import { logDebug, logWarn } from '../../copilot/logger';
 import { ContextExecuteFn, ToolResult } from './types';
 import { getRuntimeVersionFromPom } from './connector_store_cache';
@@ -196,6 +200,14 @@ const CONTEXT_REFERENCES: ContextDefinition[] = [
         content: UNIT_TEST_REFERENCE_FULL,
         sections: UNIT_TEST_REFERENCE_SECTIONS,
         aliases: ['unit_test_reference', 'unit-test-guide'],
+    },
+    {
+        name: 'data-mapper-reference',
+        description: 'TypeScript data mapper reference: .ts file skeleton, dmUtils helper API (sum/average/max/min/concat/toNumber/etc with signatures), the TS2556 dynamic-array spread pitfall (use array.reduce(...), never dmUtils.sum(...arr)), array handling patterns, and tool-routing guidance (prefer create_data_mapper / generate_data_mapping over hand-written mappings). Load before editing existing .ts mapping files. Requires MI runtime 4.4.0+.',
+        content: DATA_MAPPER_REFERENCE_FULL,
+        sections: DATA_MAPPER_REFERENCE_SECTIONS,
+        minRuntimeVersion: RUNTIME_VERSION_440,
+        aliases: ['data_mapper_reference', 'datamapper-reference', 'dmutils-reference'],
     },
 ];
 
