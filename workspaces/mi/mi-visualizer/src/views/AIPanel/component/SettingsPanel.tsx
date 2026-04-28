@@ -140,6 +140,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose, isByok, isAwsBed
             return;
         }
         // Disabling: drop the saved key (and the approval-skip pref, which becomes meaningless).
+        // If no key was ever saved (toggle was on only because the input was open), skip the RPC.
+        if (!tavilyKey) {
+            setTavilyInputOpen(false);
+            setTavilyDraft("");
+            setTavilyStatus({ kind: 'idle' });
+            return;
+        }
         tavilyMutationLock.current = true;
         setTavilyInputOpen(false);
         setTavilyDraft("");
