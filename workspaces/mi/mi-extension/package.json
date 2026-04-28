@@ -315,7 +315,10 @@
         "command": "MI.openAiPanel",
         "title": "Open AI Panel",
         "category": "MI",
-        "icon": "$(wand)"
+        "icon": {
+          "light": "./resources/icons/dark-ai-chat.svg",
+          "dark": "./resources/icons/light-ai-chat.svg"
+        }
       },
       {
         "command": "MI.configureDefaultModelProvider",
