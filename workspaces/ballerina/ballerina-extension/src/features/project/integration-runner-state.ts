@@ -9,6 +9,7 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 
+import * as path from "path";
 import { commands, debug, DebugSession, tasks, Terminal, Uri, window } from "vscode";
 import { extension } from "../../BalExtensionContext";
 import { startDebugging } from "../editor-support/activator";
@@ -35,6 +36,14 @@ export function isIntegrationRunning(): boolean {
     return terminalAlive || debugAlive;
 }
 
+// True when the running integration is the one at `targetPath`.
+export function isIntegrationRunningAt(targetPath: string): boolean {
+    if (!isIntegrationRunning() || !lastRunPath) {
+        return false;
+    }
+    return path.resolve(lastRunPath) === path.resolve(targetPath);
+}
+
 export async function restartIntegration(): Promise<void> {
     if (runDebugSession) {
         const script = (runDebugSession.configuration as { script?: string })?.script
@@ -44,7 +53,7 @@ export async function restartIntegration(): Promise<void> {
         await terminateTraceServerTask();
         TracerMachine.startServer();
         if (script) {
-            // Re-launch directly so we skip the BI run flow's Try-It suggestion.
+            // Direct re-launch skips the BI run flow's Try-It suggestion.
             await startDebugging(Uri.file(script), false, false, true);
         } else {
             window.showErrorMessage(
@@ -59,6 +68,7 @@ export async function restartIntegration(): Promise<void> {
     }
     await terminateTraceServerTask();
     TracerMachine.startServer();
+    // Wrap as Uri so the RUN handler avoids Uri.parse, which mishandles Windows paths.
     const runArg = lastRunPath ? Uri.file(lastRunPath) : undefined;
     await commands.executeCommand(PALETTE_COMMANDS.RUN, runArg);
 }

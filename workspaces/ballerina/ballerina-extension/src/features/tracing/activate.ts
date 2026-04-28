@@ -29,7 +29,7 @@ import { getCurrentProjectRoot, tryGetCurrentBallerinaFile } from '../../utils/p
 import { findBallerinaPackageRoot } from '../../utils';
 import { requiresPackageSelection, selectPackageOrPrompt } from '../../utils/command-utils';
 import { sendTracingStatusChangedNotification } from '../../RPCLayer';
-import { isIntegrationRunning, restartIntegration } from '../project/integration-runner-state';
+import { isIntegrationRunningAt, restartIntegration } from '../project/integration-runner-state';
 
 export const TRACE_WINDOW_COMMAND = 'ballerina.showTraceWindow';
 export const ENABLE_TRACING_COMMAND = 'ballerina.enableTracing';
@@ -117,7 +117,7 @@ export function activateTracing(ballerinaExtInstance: BallerinaExtension) {
         }
 
         TracerMachine.enable(targetPath);
-        await notifyTracingToggle(true);
+        await notifyTracingToggle(true, targetPath);
     });
 
     const disableTracingCommand = vscode.commands.registerCommand(DISABLE_TRACING_COMMAND, async () => {
@@ -126,7 +126,7 @@ export function activateTracing(ballerinaExtInstance: BallerinaExtension) {
             return;
         }
         TracerMachine.disable(targetPath);
-        await notifyTracingToggle(false);
+        await notifyTracingToggle(false, targetPath);
     });
 
     const clearTracesCommand = vscode.commands.registerCommand(CLEAR_TRACES_COMMAND, () => {
@@ -281,14 +281,9 @@ function showTraceDetails(trace: Trace, focusSpanId?: string, isAgentChat?: bool
     }
 }
 
-/**
- * Surface the right notification after a tracing toggle:
- * - Running integration  → warning with "Restart Integration" action.
- * - Otherwise            → info toast confirming the new state, since the
- *                          command palette caller may not have any UI in view.
- */
-async function notifyTracingToggle(enabled: boolean): Promise<void> {
-    if (!isIntegrationRunning()) {
+// Warning + restart when the toggled integration is running; info toast otherwise.
+async function notifyTracingToggle(enabled: boolean, targetPath: string): Promise<void> {
+    if (!isIntegrationRunningAt(targetPath)) {
         vscode.window.showInformationMessage(enabled ? 'Tracing enabled.' : 'Tracing disabled.');
         return;
     }
