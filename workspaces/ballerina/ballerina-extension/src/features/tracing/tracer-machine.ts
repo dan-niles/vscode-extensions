@@ -134,11 +134,11 @@ function stopServer(context: TracerMachineContext, event?: any): Promise<void> {
     if (!taskExecution || !vscode.tasks.taskExecutions.includes(taskExecution)) {
         return TraceServer.stop();
     }
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
         const subscription = vscode.tasks.onDidEndTask((endEvent) => {
             if (endEvent.execution === taskExecution) {
                 subscription.dispose();
-                resolve();
+                TraceServer.stop().then(resolve, reject);
             }
         });
         taskExecution.terminate();
