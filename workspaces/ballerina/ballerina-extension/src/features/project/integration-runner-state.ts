@@ -10,16 +10,20 @@
  */
 
 import * as path from "path";
-import { commands, debug, DebugSession, tasks, Terminal, Uri, window } from "vscode";
+import { commands, debug, DebugSession, Terminal, Uri, window } from "vscode";
 import { extension } from "../../BalExtensionContext";
 import { startDebugging } from "../editor-support/activator";
 import { TracerMachine } from "../tracing";
 import { PALETTE_COMMANDS } from "./cmds/cmd-runner";
 
-const TRACE_SERVER_TASK_SOURCE = "ballerina-tracing";
-const TRACE_SERVER_TASK_NAME = "Start Trace Server";
+const BALLERINA_DEBUG_TYPE = "ballerina";
 
-const BALLERINA_DEBUG_SESSION_NAME = "Ballerina Debug";
+function isIntegrationRunDebugSession(session: DebugSession): boolean {
+    if (session.type !== BALLERINA_DEBUG_TYPE) {
+        return false;
+    }
+    return !(session.configuration as { debugTests?: boolean })?.debugTests;
+}
 
 let runTerminal: Terminal | undefined;
 let runDebugSession: DebugSession | undefined;
@@ -44,52 +48,22 @@ export function isIntegrationRunningAt(targetPath: string): boolean {
     return path.resolve(lastRunPath) === path.resolve(targetPath);
 }
 
-export async function restartIntegration(): Promise<void> {
+export async function restartIntegration(targetPath: string): Promise<void> {
     if (runDebugSession) {
-        const script = (runDebugSession.configuration as { script?: string })?.script
-            ?? lastRunPath;
         await debug.stopDebugging(runDebugSession);
         runDebugSession = undefined;
-        await terminateTraceServerTask();
         TracerMachine.startServer();
-        if (script) {
-            // Direct re-launch skips the BI run flow's Try-It suggestion.
-            await startDebugging(Uri.file(script), false, false, true);
-        } else {
-            window.showErrorMessage(
-                "Could not restart the integration automatically — please run it again manually."
-            );
-        }
+        // Direct re-launch skips the BI run flow's Try-It suggestion.
+        await startDebugging(Uri.file(targetPath), false, false, true);
         return;
     }
     if (runTerminal) {
         runTerminal.dispose();
         runTerminal = undefined;
     }
-    await terminateTraceServerTask();
     TracerMachine.startServer();
     // Wrap as Uri so the RUN handler avoids Uri.parse, which mishandles Windows paths.
-    const runArg = lastRunPath ? Uri.file(lastRunPath) : undefined;
-    await commands.executeCommand(PALETTE_COMMANDS.RUN, runArg);
-}
-
-async function terminateTraceServerTask(): Promise<void> {
-    const traceTask = tasks.taskExecutions.find(
-        (execution) => execution.task.source === TRACE_SERVER_TASK_SOURCE
-            && execution.task.name === TRACE_SERVER_TASK_NAME
-    );
-    if (!traceTask) {
-        return;
-    }
-    await new Promise<void>((resolve) => {
-        const subscription = tasks.onDidEndTask((event) => {
-            if (event.execution === traceTask) {
-                subscription.dispose();
-                resolve();
-            }
-        });
-        traceTask.terminate();
-    });
+    await commands.executeCommand(PALETTE_COMMANDS.RUN, Uri.file(targetPath));
 }
 
 export function activateIntegrationRunnerState(): void {
@@ -100,7 +74,7 @@ export function activateIntegrationRunnerState(): void {
             }
         }),
         debug.onDidStartDebugSession((session) => {
-            if (session.name === BALLERINA_DEBUG_SESSION_NAME) {
+            if (isIntegrationRunDebugSession(session)) {
                 runDebugSession = session;
                 const script = (session.configuration as { script?: string })?.script;
                 if (script) {

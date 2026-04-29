@@ -294,6 +294,6 @@ async function notifyTracingToggle(enabled: boolean, targetPath: string): Promis
         "Dismiss"
     );
     if (selection === restartAction) {
-        await restartIntegration();
+        await restartIntegration(targetPath);
     }
 }
