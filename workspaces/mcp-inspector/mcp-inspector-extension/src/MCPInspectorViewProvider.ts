@@ -25,7 +25,8 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
         enableScripts: WebviewConfig.ENABLE_SCRIPTS,
       };
 
-      MCPInspectorViewProvider.attachClipboardBridge(webviewView.webview);
+      const clipboardBridge = MCPInspectorViewProvider.attachClipboardBridge(webviewView.webview);
+      webviewView.onDidDispose(() => clipboardBridge.dispose());
       webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
     } catch (error) {
       Logger.error('Failed to resolve webview view', error);
@@ -401,9 +402,9 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
         } else if (msg.type === 'mcp-inspector-request-clipboard-write' && e.source === iframe.contentWindow) {
           vscodeApi.postMessage({ type: 'mcp-inspector-request-clipboard-write', requestId: msg.requestId, text: msg.text });
         } else if (msg.type === 'mcp-inspector-clipboard-text' && iframe.contentWindow) {
-          iframe.contentWindow.postMessage({ type: 'mcp-inspector-paste-response', requestId: msg.requestId, text: msg.text }, '*');
+          iframe.contentWindow.postMessage({ type: 'mcp-inspector-paste-response', requestId: msg.requestId, text: msg.text }, 'http://localhost:${Ports.CLIENT}');
         } else if (msg.type === 'mcp-inspector-clipboard-write-result' && iframe.contentWindow) {
-          iframe.contentWindow.postMessage({ type: 'mcp-inspector-clipboard-write-result', requestId: msg.requestId, ok: msg.ok, error: msg.error }, '*');
+          iframe.contentWindow.postMessage({ type: 'mcp-inspector-clipboard-write-result', requestId: msg.requestId, ok: msg.ok, error: msg.error }, 'http://localhost:${Ports.CLIENT}');
         }
       });
 

@@ -119,8 +119,9 @@ function openInspectorPanel(
       dark: vscode.Uri.joinPath(context.extensionUri, 'resources', 'icon-light.svg'),
     };
 
-    // Wire up the paste bridge so iframe inputs can paste from the system clipboard
-    context.subscriptions.push(MCPInspectorViewProvider.attachClipboardBridge(currentPanel.webview));
+    // Wire up the paste bridge so iframe inputs can paste from the system clipboard.
+    // Tied to panel lifetime to avoid leaking listeners across reopen cycles.
+    const clipboardBridge = MCPInspectorViewProvider.attachClipboardBridge(currentPanel.webview);
 
     // Set initial loading content
     currentPanel.webview.html = provider.getLoadingHtml();
@@ -173,6 +174,7 @@ function openInspectorPanel(
     // Handle panel disposal
     currentPanel.onDidDispose(
       () => {
+        clipboardBridge.dispose();
         currentPanel = undefined;
 
         // Stop the MCP Inspector processes when panel is closed

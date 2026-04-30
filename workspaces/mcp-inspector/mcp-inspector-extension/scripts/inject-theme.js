@@ -46,16 +46,22 @@ const CUSTOM_CSS = `    <!-- Dynamic Theme Injection Placeholder -->
         function insertTextAt(el, text) {
           if (!el || !text) return;
           if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
-            var start = el.selectionStart != null ? el.selectionStart : el.value.length;
-            var end = el.selectionEnd != null ? el.selectionEnd : el.value.length;
+            // input[type="number"] (and a few others) don't support selection APIs;
+            // setSelectionRange throws InvalidStateError, which would skip the input event.
+            var canSelect = el.tagName === 'TEXTAREA' ||
+              ['text', 'search', 'url', 'email', 'password', 'tel'].indexOf((el.type || 'text').toLowerCase()) !== -1;
+            var start = canSelect && el.selectionStart != null ? el.selectionStart : el.value.length;
+            var end = canSelect && el.selectionEnd != null ? el.selectionEnd : el.value.length;
             var nativeSetter = Object.getOwnPropertyDescriptor(
               el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
               'value'
             ).set;
             // Use the native setter so React's onChange fires (React tracks the prior value)
             nativeSetter.call(el, el.value.slice(0, start) + text + el.value.slice(end));
-            var caret = start + text.length;
-            el.setSelectionRange(caret, caret);
+            if (canSelect) {
+              var caret = start + text.length;
+              el.setSelectionRange(caret, caret);
+            }
             el.dispatchEvent(new Event('input', { bubbles: true }));
           } else if (el.isContentEditable) {
             document.execCommand('insertText', false, text);
@@ -117,9 +123,14 @@ const CUSTOM_CSS = `    <!-- Dynamic Theme Injection Placeholder -->
             e.preventDefault();
             e.stopPropagation();
             if (typeof window.__mcpInspectorWriteClipboard === 'function') {
-              window.__mcpInspectorWriteClipboard(ctx.text).catch(function () { /* swallow */ });
+              var write = window.__mcpInspectorWriteClipboard(ctx.text);
+              if (k === 'x') {
+                // Defer the delete until after the write resolves to avoid silent data loss.
+                write.then(function () { deleteSelection(ctx); }, function () { /* keep selection on failure */ });
+              } else {
+                write.catch(function () { /* swallow */ });
+              }
             }
-            if (k === 'x') deleteSelection(ctx);
             return;
           }
 
@@ -132,6 +143,9 @@ const CUSTOM_CSS = `    <!-- Dynamic Theme Injection Placeholder -->
             e.stopPropagation();
             var id = ++pasteRequestId;
             pendingPasteRequests.set(id, ae);
+            setTimeout(function () {
+              pendingPasteRequests.delete(id);
+            }, 10000);
             window.parent.postMessage({ type: 'mcp-inspector-request-paste', requestId: id }, '*');
           } else if (k === 'a') {
             // VS Code's webview swallows the native Select All; do it manually.
@@ -165,6 +179,8 @@ const CUSTOM_CSS = `    <!-- Dynamic Theme Injection Placeholder -->
         };
 
         window.addEventListener('message', function (e) {
+          // Only honour clipboard responses from the parent webview shell.
+          if (e.source !== window.parent) return;
           var msg = e.data;
           if (!msg) return;
           if (msg.type === 'mcp-inspector-paste-response') {
