@@ -23,6 +23,88 @@ const INDEX_HTML_PATH = path.join(
 // Placeholder CSS - will be replaced by dynamic theme injection at runtime
 const CUSTOM_CSS = `    <!-- Dynamic Theme Injection Placeholder -->
     <script>
+      // === Clipboard paste bridge ===
+      // Cross-origin iframes inside VS Code webviews cannot use the Clipboard API
+      // (microsoft/vscode#129178, #182642). We intercept Cmd/Ctrl+V over paste-capable
+      // fields and ask the parent webview for the clipboard text, then insert it ourselves.
+      (function () {
+        var pasteRequestId = 0;
+        var pendingPasteRequests = new Map();
+
+        function isPasteableInput(el) {
+          if (!el) return false;
+          if (el.isContentEditable) return true;
+          if (el.tagName === 'TEXTAREA') return !el.disabled && !el.readOnly;
+          if (el.tagName === 'INPUT') {
+            var t = (el.type || 'text').toLowerCase();
+            var pasteableTypes = ['text', 'search', 'url', 'email', 'password', 'tel', 'number'];
+            return pasteableTypes.indexOf(t) !== -1 && !el.disabled && !el.readOnly;
+          }
+          return false;
+        }
+
+        function insertTextAt(el, text) {
+          if (!el || !text) return;
+          if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+            var start = el.selectionStart != null ? el.selectionStart : el.value.length;
+            var end = el.selectionEnd != null ? el.selectionEnd : el.value.length;
+            var nativeSetter = Object.getOwnPropertyDescriptor(
+              el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
+              'value'
+            ).set;
+            // Use the native setter so React's onChange fires (React tracks the prior value)
+            nativeSetter.call(el, el.value.slice(0, start) + text + el.value.slice(end));
+            var caret = start + text.length;
+            el.setSelectionRange(caret, caret);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+          } else if (el.isContentEditable) {
+            document.execCommand('insertText', false, text);
+          }
+        }
+
+        function selectAll(el) {
+          if (!el) return;
+          if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+            try { el.select(); } catch (_) { /* ignore */ }
+          } else if (el.isContentEditable) {
+            var range = document.createRange();
+            range.selectNodeContents(el);
+            var sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        }
+
+        document.addEventListener('keydown', function (e) {
+          if (!(e.metaKey || e.ctrlKey)) return;
+          if (e.shiftKey || e.altKey) return;
+          var ae = document.activeElement;
+          if (!isPasteableInput(ae)) return;
+          var k = e.key && e.key.toLowerCase();
+          if (k === 'v') {
+            // Prevent the (broken) native paste path; do our own via the parent webview.
+            e.preventDefault();
+            e.stopPropagation();
+            var id = ++pasteRequestId;
+            pendingPasteRequests.set(id, ae);
+            window.parent.postMessage({ type: 'mcp-inspector-request-paste', requestId: id }, '*');
+          } else if (k === 'a') {
+            // VS Code's webview swallows the native Select All; do it manually.
+            e.preventDefault();
+            e.stopPropagation();
+            selectAll(ae);
+          }
+        }, true);
+
+        window.addEventListener('message', function (e) {
+          var msg = e.data;
+          if (!msg || msg.type !== 'mcp-inspector-paste-response') return;
+          var target = pendingPasteRequests.get(msg.requestId);
+          pendingPasteRequests.delete(msg.requestId);
+          if (target && msg.text) insertTextAt(target, msg.text);
+        });
+      })();
+
       // Function to convert color (hex or rgb/rgba) to HSL format
       function colorToHsl(color) {
         let r, g, b;

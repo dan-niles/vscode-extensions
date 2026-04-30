@@ -25,11 +25,38 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
         enableScripts: WebviewConfig.ENABLE_SCRIPTS,
       };
 
+      MCPInspectorViewProvider.attachClipboardBridge(webviewView.webview);
       webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
     } catch (error) {
       Logger.error('Failed to resolve webview view', error);
       throw error;
     }
+  }
+
+  /**
+   * Wires up the parent-webview side of the clipboard paste bridge.
+   * The iframe cannot read the system clipboard directly because it's cross-origin
+   * to the VS Code webview shell; we relay the request through the extension host.
+   */
+  public static attachClipboardBridge(webview: vscode.Webview): vscode.Disposable {
+    return webview.onDidReceiveMessage(async (msg) => {
+      if (!msg || msg.type !== 'mcp-inspector-request-clipboard-text') return;
+      try {
+        const text = await vscode.env.clipboard.readText();
+        webview.postMessage({
+          type: 'mcp-inspector-clipboard-text',
+          requestId: msg.requestId,
+          text,
+        });
+      } catch (error) {
+        Logger.error('Failed to read clipboard for inspector paste', error);
+        webview.postMessage({
+          type: 'mcp-inspector-clipboard-text',
+          requestId: msg.requestId,
+          text: '',
+        });
+      }
+    });
   }
 
   /**
@@ -199,7 +226,7 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
   </style>
 </head>
 <body>
-  <iframe id="inspector-iframe" src="${inspectorUrl}" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
+  <iframe id="inspector-iframe" src="${inspectorUrl}" sandbox="allow-scripts allow-forms allow-same-origin" allow="clipboard-read; clipboard-write"></iframe>
   <script>
     (function() {
       const iframe = document.getElementById('inspector-iframe');
@@ -343,6 +370,19 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
         setTimeout(sendThemeColors, 50);
         setTimeout(sendThemeColors, 200);
       };
+
+      // === Clipboard paste bridge (parent webview side) ===
+      // Iframe asks us for clipboard text -> we ask the extension -> we forward back to iframe.
+      const vscodeApi = acquireVsCodeApi();
+      window.addEventListener('message', function(e) {
+        const msg = e.data;
+        if (!msg || typeof msg !== 'object') return;
+        if (msg.type === 'mcp-inspector-request-paste' && e.source === iframe.contentWindow) {
+          vscodeApi.postMessage({ type: 'mcp-inspector-request-clipboard-text', requestId: msg.requestId });
+        } else if (msg.type === 'mcp-inspector-clipboard-text' && iframe.contentWindow) {
+          iframe.contentWindow.postMessage({ type: 'mcp-inspector-paste-response', requestId: msg.requestId, text: msg.text }, '*');
+        }
+      });
 
       // Listen for VSCode theme changes
       const observer = new MutationObserver((mutations) => {
