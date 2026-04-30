@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-04-30
+
+### Fixed
+- **Theme and Accessibility Improvements** — Fixed MCP Inspector styling issues by improving VS Code theme color mapping, synchronizing dark/high-contrast mode behavior, and addressing text visibility problems in the Try It editor
+
+## [0.7.3] - 2026-04-23
+
+### Fixed
+- **Inspector Startup and Cross-Platform Reliability** — Fixed MCP Inspector launch issues by improving process spawning, resolving browser auto-open path handling (including Windows-specific build/runtime path mismatches), and tightening client loading behavior
+
 ## [0.7.2] - 2025-11-06
 
 ### Fixed
