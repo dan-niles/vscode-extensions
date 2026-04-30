@@ -75,12 +75,57 @@ const CUSTOM_CSS = `    <!-- Dynamic Theme Injection Placeholder -->
           }
         }
 
+        function getSelectionContext() {
+          var ae = document.activeElement;
+          if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
+            var s = ae.selectionStart;
+            var en = ae.selectionEnd;
+            if (s != null && en != null && s !== en) {
+              return { text: ae.value.slice(s, en), inInput: true, el: ae, start: s, end: en };
+            }
+          }
+          var sel = window.getSelection();
+          var selText = sel ? sel.toString() : '';
+          if (selText) return { text: selText, inInput: false };
+          return null;
+        }
+
+        function deleteSelection(ctx) {
+          if (!ctx) return;
+          if (ctx.inInput && ctx.el && !ctx.el.disabled && !ctx.el.readOnly) {
+            var nativeSetter = Object.getOwnPropertyDescriptor(
+              ctx.el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
+              'value'
+            ).set;
+            nativeSetter.call(ctx.el, ctx.el.value.slice(0, ctx.start) + ctx.el.value.slice(ctx.end));
+            ctx.el.setSelectionRange(ctx.start, ctx.start);
+            ctx.el.dispatchEvent(new Event('input', { bubbles: true }));
+          } else {
+            try { document.execCommand('delete'); } catch (_) { /* ignore */ }
+          }
+        }
+
         document.addEventListener('keydown', function (e) {
           if (!(e.metaKey || e.ctrlKey)) return;
           if (e.shiftKey || e.altKey) return;
+          var k = e.key && e.key.toLowerCase();
+
+          // Copy / Cut: work on any selection in the document (form field or UI text).
+          if (k === 'c' || k === 'x') {
+            var ctx = getSelectionContext();
+            if (!ctx || !ctx.text) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof window.__mcpInspectorWriteClipboard === 'function') {
+              window.__mcpInspectorWriteClipboard(ctx.text).catch(function () { /* swallow */ });
+            }
+            if (k === 'x') deleteSelection(ctx);
+            return;
+          }
+
+          // Paste / Select-all: only meaningful when a paste-capable field is focused.
           var ae = document.activeElement;
           if (!isPasteableInput(ae)) return;
-          var k = e.key && e.key.toLowerCase();
           if (k === 'v') {
             // Prevent the (broken) native paste path; do our own via the parent webview.
             e.preventDefault();
@@ -96,12 +141,43 @@ const CUSTOM_CSS = `    <!-- Dynamic Theme Injection Placeholder -->
           }
         }, true);
 
+        // Bridge for writing to the system clipboard (copy direction).
+        // Cross-origin iframes can't use navigator.clipboard.writeText() either,
+        // so we ask the extension host to do it via vscode.env.clipboard.writeText().
+        var copyRequestId = 0;
+        var pendingCopyRequests = new Map();
+        window.__mcpInspectorWriteClipboard = function (text) {
+          return new Promise(function (resolve, reject) {
+            var id = ++copyRequestId;
+            pendingCopyRequests.set(id, { resolve: resolve, reject: reject });
+            window.parent.postMessage({
+              type: 'mcp-inspector-request-clipboard-write',
+              requestId: id,
+              text: text == null ? '' : String(text)
+            }, '*');
+            setTimeout(function () {
+              if (pendingCopyRequests.has(id)) {
+                pendingCopyRequests.delete(id);
+                reject(new Error('Clipboard write timed out'));
+              }
+            }, 5000);
+          });
+        };
+
         window.addEventListener('message', function (e) {
           var msg = e.data;
-          if (!msg || msg.type !== 'mcp-inspector-paste-response') return;
-          var target = pendingPasteRequests.get(msg.requestId);
-          pendingPasteRequests.delete(msg.requestId);
-          if (target && msg.text) insertTextAt(target, msg.text);
+          if (!msg) return;
+          if (msg.type === 'mcp-inspector-paste-response') {
+            var target = pendingPasteRequests.get(msg.requestId);
+            pendingPasteRequests.delete(msg.requestId);
+            if (target && msg.text) insertTextAt(target, msg.text);
+          } else if (msg.type === 'mcp-inspector-clipboard-write-result') {
+            var pending = pendingCopyRequests.get(msg.requestId);
+            if (!pending) return;
+            pendingCopyRequests.delete(msg.requestId);
+            if (msg.ok) pending.resolve();
+            else pending.reject(new Error(msg.error || 'Clipboard write failed'));
+          }
         });
       })();
 
@@ -151,7 +227,44 @@ const CUSTOM_CSS = `    <!-- Dynamic Theme Injection Placeholder -->
         return Math.round(h * 360) + ' ' + Math.round(s * 100) + '% ' + Math.round(l * 100) + '%';
       }
 
-      // Remove existing theme styles when updating
+      // Fallback to execCommand when webview blocks navigator.clipboard.writeText.
+      (function patchClipboard() {
+        const execCopy = (text) => {
+          const ta = document.createElement('textarea');
+          ta.value = text == null ? '' : String(text);
+          ta.setAttribute('readonly', '');
+          ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+          document.body.appendChild(ta);
+          const sel = document.getSelection();
+          const prevRange = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+          ta.select();
+          ta.setSelectionRange(0, ta.value.length);
+          let ok = false;
+          try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+          document.body.removeChild(ta);
+          if (prevRange && sel) { sel.removeAllRanges(); sel.addRange(prevRange); }
+          return ok;
+        };
+        const native = navigator.clipboard && navigator.clipboard.writeText
+          ? navigator.clipboard.writeText.bind(navigator.clipboard)
+          : null;
+        const writeText = async (text) => {
+          if (native) {
+            try { return await native(text); } catch (_) {}
+          }
+          // VS Code webview path: ask the extension host to write the clipboard.
+          if (typeof window.__mcpInspectorWriteClipboard === 'function') {
+            try { await window.__mcpInspectorWriteClipboard(text); return; } catch (_) {}
+          }
+          if (execCopy(text)) return;
+          throw new Error('Clipboard copy failed');
+        };
+        if (!navigator.clipboard) {
+          Object.defineProperty(navigator, 'clipboard', { value: {}, configurable: true });
+        }
+        try { navigator.clipboard.writeText = writeText; } catch (_) {}
+      })();
+
       let themeStyleElement = null;
 
       // Listen for theme color messages from parent

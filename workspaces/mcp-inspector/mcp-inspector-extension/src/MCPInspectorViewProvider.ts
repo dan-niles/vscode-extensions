@@ -40,21 +40,40 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
    */
   public static attachClipboardBridge(webview: vscode.Webview): vscode.Disposable {
     return webview.onDidReceiveMessage(async (msg) => {
-      if (!msg || msg.type !== 'mcp-inspector-request-clipboard-text') return;
-      try {
-        const text = await vscode.env.clipboard.readText();
-        webview.postMessage({
-          type: 'mcp-inspector-clipboard-text',
-          requestId: msg.requestId,
-          text,
-        });
-      } catch (error) {
-        Logger.error('Failed to read clipboard for inspector paste', error);
-        webview.postMessage({
-          type: 'mcp-inspector-clipboard-text',
-          requestId: msg.requestId,
-          text: '',
-        });
+      if (!msg) return;
+      if (msg.type === 'mcp-inspector-request-clipboard-text') {
+        try {
+          const text = await vscode.env.clipboard.readText();
+          webview.postMessage({
+            type: 'mcp-inspector-clipboard-text',
+            requestId: msg.requestId,
+            text,
+          });
+        } catch (error) {
+          Logger.error('Failed to read clipboard for inspector paste', error);
+          webview.postMessage({
+            type: 'mcp-inspector-clipboard-text',
+            requestId: msg.requestId,
+            text: '',
+          });
+        }
+      } else if (msg.type === 'mcp-inspector-request-clipboard-write') {
+        try {
+          await vscode.env.clipboard.writeText(typeof msg.text === 'string' ? msg.text : '');
+          webview.postMessage({
+            type: 'mcp-inspector-clipboard-write-result',
+            requestId: msg.requestId,
+            ok: true,
+          });
+        } catch (error) {
+          Logger.error('Failed to write clipboard for inspector copy', error);
+          webview.postMessage({
+            type: 'mcp-inspector-clipboard-write-result',
+            requestId: msg.requestId,
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     });
   }
@@ -371,16 +390,20 @@ export class MCPInspectorViewProvider implements vscode.WebviewViewProvider {
         setTimeout(sendThemeColors, 200);
       };
 
-      // === Clipboard paste bridge (parent webview side) ===
-      // Iframe asks us for clipboard text -> we ask the extension -> we forward back to iframe.
+      // === Clipboard bridge (parent webview side) ===
+      // Iframe asks us for clipboard read/write -> we ask the extension -> we forward back to iframe.
       const vscodeApi = acquireVsCodeApi();
       window.addEventListener('message', function(e) {
         const msg = e.data;
         if (!msg || typeof msg !== 'object') return;
         if (msg.type === 'mcp-inspector-request-paste' && e.source === iframe.contentWindow) {
           vscodeApi.postMessage({ type: 'mcp-inspector-request-clipboard-text', requestId: msg.requestId });
+        } else if (msg.type === 'mcp-inspector-request-clipboard-write' && e.source === iframe.contentWindow) {
+          vscodeApi.postMessage({ type: 'mcp-inspector-request-clipboard-write', requestId: msg.requestId, text: msg.text });
         } else if (msg.type === 'mcp-inspector-clipboard-text' && iframe.contentWindow) {
           iframe.contentWindow.postMessage({ type: 'mcp-inspector-paste-response', requestId: msg.requestId, text: msg.text }, '*');
+        } else if (msg.type === 'mcp-inspector-clipboard-write-result' && iframe.contentWindow) {
+          iframe.contentWindow.postMessage({ type: 'mcp-inspector-clipboard-write-result', requestId: msg.requestId, ok: msg.ok, error: msg.error }, '*');
         }
       });
 
