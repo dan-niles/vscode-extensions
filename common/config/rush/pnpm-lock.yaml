@@ -1875,9 +1875,6 @@ importers:
 
   ../../workspaces/ballerina/graphql:
     dependencies:
-      copyfiles:
-        specifier: 2.4.1
-        version: 2.4.1
       graphiql:
         specifier: 3.7.0
         version: 3.7.0(@codemirror/language@6.11.3)(@types/node@22.15.24)(@types/react-dom@18.2.0)(@types/react@18.2.0)(graphql@16.11.0)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
