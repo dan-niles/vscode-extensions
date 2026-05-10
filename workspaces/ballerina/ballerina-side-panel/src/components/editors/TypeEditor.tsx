@@ -258,6 +258,7 @@ export function TypeEditor(props: TypeEditorProps) {
 
     return (
         <S.Container
+            data-testid={`type-editor-${field.key}`}
             onMouseEnter={() => setIsTypeEditorHovered(true)}
             onMouseLeave={() => setIsTypeEditorHovered(false)}
         >

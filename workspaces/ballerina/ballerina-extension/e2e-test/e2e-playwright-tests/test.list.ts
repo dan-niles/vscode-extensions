@@ -45,9 +45,11 @@ import automationDebug from './automation-debug/automation-debug.spec';
 import expressionEditor from './expression-editor/expression-editor.spec';
 
 import httpService from './api-integration/http-service.spec';
-import aiChatService from './api-integration/ai-chat-service.spec';
 import graphqlService from './api-integration/graphql-service.spec';
 import tcpService from './api-integration/tcp-service.spec';
+
+import aiChatService from './ai-integration/ai-chat-service.spec';
+import modelProvider from './ai-integration/model-provider.spec';
 
 import kafkaIntegration from './event-integration/kafka.spec';
 import rabbitmqIntegration from './event-integration/rabbitmq.spec';
@@ -132,6 +134,9 @@ test.describe('Ballerina E2E Group 2', { tag: '@group2' }, async () => {
 
     // <----AI Chat Service Test---->
     test.describe(aiChatService);
+
+    // <----Model Provider Direct LLM Test---->
+    test.describe(modelProvider);
 
     // <----Integration as API Test---->
     test.describe(graphqlService);
