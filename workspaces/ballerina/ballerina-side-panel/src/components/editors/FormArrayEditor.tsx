@@ -203,7 +203,7 @@ export const FormArrayEditor = (props: FormFieldEditorProps & {
     }, [props.value, props.field.types]);
 
     return (
-        <S.Container>
+        <S.Container data-testid={`array-editor-${props.field.key}`}>
             <S.Header>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '8px' }}>
                     <div>
@@ -238,8 +238,12 @@ export const FormArrayEditor = (props: FormFieldEditorProps & {
                 maxVisibleItems={3}
             >
                 {
-                    repeatableFields.map((formField) => (
-                        <S.ItemContainer style={{ position: 'relative', marginBottom: '4px' }} key={formField.key}>
+                    repeatableFields.map((formField, index) => (
+                        <S.ItemContainer
+                            style={{ position: 'relative', marginBottom: '4px' }}
+                            key={formField.key}
+                            data-testid={`array-editor-${props.field.key}-item-${index}`}
+                        >
                             <div style={{ position: 'absolute', top: '2px', right: '5px', zIndex: 1 }}>
                                 <Codicon
                                     name="close"

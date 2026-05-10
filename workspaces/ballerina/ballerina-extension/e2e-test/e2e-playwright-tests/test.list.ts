@@ -51,6 +51,7 @@ import tcpService from './api-integration/tcp-service.spec';
 import aiChatService from './ai-integration/ai-chat-service.spec';
 import modelProvider from './ai-integration/model-provider.spec';
 import knowledgeBase from './ai-integration/knowledge-base.spec';
+import dataLoader from './ai-integration/data-loader.spec';
 
 import kafkaIntegration from './event-integration/kafka.spec';
 import rabbitmqIntegration from './event-integration/rabbitmq.spec';
@@ -141,6 +142,9 @@ test.describe('Ballerina E2E Group 2', { tag: '@group2' }, async () => {
 
     // <----Vector Knowledge Base RAG Test---->
     test.describe(knowledgeBase);
+
+    // <----Data Loader RAG Test---->
+    test.describe(dataLoader);
 
     // <----Integration as API Test---->
     test.describe(graphqlService);
